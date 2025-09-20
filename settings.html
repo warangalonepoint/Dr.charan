@@ -10,7 +10,7 @@
   <meta name="theme-color" content="#17B26A"/>
 </head>
 <body>
-  <!-- Banner card -->
+  <!-- Banner -->
   <div class="hero-card">
     <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
   </div>
@@ -35,14 +35,14 @@
         <button class="btn" id="regSwBtn">Register Service Worker</button>
       </div>
 
-      <!-- Test tools (hide if missing) -->
+      <!-- Test tools (hidden if script is missing) -->
       <div id="testWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn" id="seedBtn">Seed Test Data</button>
         <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
         <span class="small" style="align-self:center;opacity:.8">Seeds P001–P005 locally with last-7-days spread.</span>
       </div>
 
-      <!-- Pharmacy tools (hide if missing) -->
+      <!-- Pharmacy tools (hidden if script is missing) -->
       <div id="pharmWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
         <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
@@ -53,28 +53,29 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Dexie first -->
+  <!-- Dexie (global) -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
-  <script src="./scripts/db.js"></script>
 
-  <!-- Optional seeders -->
+  <!-- Optional seeders: expose window.seedTestData / window.clearTestData / window.seedPharmacyData / window.clearPharmacyData -->
   <script src="./scripts/test-seed.js"></script>
   <script src="./scripts/pharmacy-seed.js"></script>
 
-  <!-- Core logic -->
-  <script src="./scripts/settings.js"></script>
+  <!-- Page logic (ES module; imports db etc.) -->
+  <script type="module" src="./scripts/settings.js"></script>
+
+  <!-- Notifications helper (non-module) -->
   <script src="./scripts/notifications.js"></script>
 
   <!-- Hide seed blocks if scripts missing -->
   <script>
     window.addEventListener('DOMContentLoaded', () => {
       if (typeof window.seedTestData !== 'function') {
-        const demoWrap = document.getElementById('testWrap');
-        if (demoWrap) demoWrap.style.display = 'none';
+        const el = document.getElementById('testWrap');
+        if (el) el.style.display = 'none';
       }
       if (typeof window.seedPharmacyData !== 'function') {
-        const pharmWrap = document.getElementById('pharmWrap');
-        if (pharmWrap) pharmWrap.style.display = 'none';
+        const el = document.getElementById('pharmWrap');
+        if (el) el.style.display = 'none';
       }
     });
   </script>
