@@ -20,6 +20,7 @@
     .qty{width:5.5rem}
     .paygrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     @media (max-width:720px){.paygrid{grid-template-columns:1fr}}
+    .warn{color:var(--warn);font-weight:700}
   </style>
 </head>
 <body>
@@ -118,16 +119,16 @@
 
     async function upsertItemFromQuery(){
       const s=q.value.trim(); if(!s) return;
-      // Parse "name | sku | mrp" → e.g., "Zincovit | ZCV01 | 120"
+      // Parse "name | sku | mrp"
       let name=s, sku='', mrp=0;
       if(s.includes('|')){
-        const [n,k,m]=s.split('|').map(x=>x.trim());
-        name=n||s; sku=k||''; mrp=Number(m||0);
+        const parts=s.split('|').map(x=>x.trim());
+        name=parts[0]||s; sku=parts[1]||''; mrp=Number(parts[2]||0);
       }
-      // find by sku or by name
+      // Find by sku or name
       let it=null;
       if(sku) it = await db.pharmacyItems.where('sku').equals(sku).first();
-      if(!it)  it = await db.pharmacyItems.where('name').equals(name).first();
+      if(!it) it = await db.pharmacyItems.where('name').equals(name).first();
       if(it){
         await db.pharmacyItems.update(it.id,{ name, sku:sku||it.sku||'', mrp: mrp||it.mrp||0 });
       }else{
@@ -142,7 +143,7 @@
       let rows = await db.pharmacyItems.toArray();
       if(s){
         rows = rows.filter(r=>{
-          const hay=[r.name,r.sku,r.barcode].map(x=>(x||'').toLowerCase()).join('|');
+          const hay=[r.name,r.sku,r.barcode,String(r.mrp||'')].map(x=>(x||'').toLowerCase()).join('|');
           return hay.includes(s);
         });
       }
@@ -174,6 +175,10 @@
       return t;
     }
 
+    function cartLineFor(item){
+      return cart.find(l => String(l.itemId)===String(item.id));
+    }
+
     function renderCart(){
       cartEl.innerHTML='';
       if(!cart.length){ cartEl.innerHTML='<div class="smallmuted">Cart is empty.</div>'; totalEl.textContent=money(0); return; }
@@ -183,24 +188,42 @@
         row.innerHTML=`
           <div>
             <strong>${line.name}</strong> <span class="smallmuted">${line.sku||''}</span>
-            <div class="smallmuted mono">₹/unit: ${Number(line.price||0).toFixed(2)}</div>
+            <div class="smallmuted mono">₹/unit: ${Number(line.price||0).toFixed(2)} <span class="smallmuted" id="stk-${idx}"></span></div>
           </div>
           <div style="display:flex;gap:6px;align-items:center">
-            <input type="number" class="in qty mono" value="${line.qty}" min="-999" step="1" data-k="qty">
+            <input type="number" class="in qty mono" value="${line.qty}" min="0" step="1" data-k="qty">
             <input type="number" class="in qty mono" value="${line.price}" min="0" step=".01" data-k="price">
             <button class="btn" data-act="del">X</button>
           </div>`;
         const [qtyIn, priceIn] = row.querySelectorAll('input');
-        qtyIn.onchange=()=>{ line.qty = Number(qtyIn.value||0); refreshTotal(); };
-        priceIn.onchange=()=>{ line.price = Number(priceIn.value||0); refreshTotal(); };
+        qtyIn.onchange=()=>{ line.qty = Math.max(0, Number(qtyIn.value||0)); refreshTotal(); stockHint(idx,line); };
+        priceIn.onchange=()=>{ line.price = Math.max(0, Number(priceIn.value||0)); refreshTotal(); };
         row.querySelector('[data-act="del"]').onclick=()=>{ cart.splice(idx,1); renderCart(); };
         cartEl.appendChild(row);
+        stockHint(idx,line);
       });
       refreshTotal();
     }
 
+    async function stockHint(idx,line){
+      const hint=document.getElementById(`stk-${idx}`);
+      if(!hint) return;
+      const it = await db.pharmacyItems.get(line.itemId);
+      const stk = Number(it?.stock||0);
+      if(line.qty>stk){
+        hint.innerHTML = `• <span class="warn">Stock: ${stk} (short by ${line.qty-stk})</span>`;
+      }else{
+        hint.textContent = `• Stock: ${stk}`;
+      }
+    }
+
     function addToCart(it){
-      cart.push({ itemId: it.id, name: it.name, sku: it.sku, qty: 1, price: Number(it.mrp||0) });
+      const existing = cartLineFor(it);
+      if(existing){
+        existing.qty = Number(existing.qty||0)+1;
+      }else{
+        cart.push({ itemId: it.id, name: it.name, sku: it.sku, qty: 1, price: Number(it.mrp||0) });
+      }
       renderCart();
     }
 
@@ -213,6 +236,18 @@
       const date=todayISO();
       const total=refreshTotal();
       const type='sale';
+
+      // Warn if any line exceeds stock (allows proceed)
+      const shortages=[];
+      for(const line of cart){
+        const it = await db.pharmacyItems.get(line.itemId);
+        const stk = Number(it?.stock||0);
+        if(line.qty>stk) shortages.push(`${line.name} (need ${line.qty}, have ${stk})`);
+      }
+      if(shortages.length){
+        const ok = confirm('Some items exceed stock:\n- '+shortages.join('\n- ')+'\n\nProceed anyway?');
+        if(!ok) return;
+      }
 
       // Create invoice
       const invoiceId = await db.invoices.add({ date, type, total, party: partyEl.value||null });
@@ -229,13 +264,13 @@
         }
       }
 
-      // Record payment as a voucher (receipt) WITHOUT schema changes
+      // Record payment as a voucher (receipt)
       const mode = payModeEl.value;          // 'cash' | 'upi' | 'card'
       const ref  = (payRefEl.value||'').trim();
       const note = `invoice:${invoiceId}; mode:${mode}${ref?'; ref:'+ref:''}`;
       await db.vouchers.add({ date, type:'receipt', amount: total, party: partyEl.value||null, note });
 
-      // Notify doctor (optional)
+      // Notify doctor (optional MVP)
       try{ if(window.notifyDoctor){ window.notifyDoctor({title:'Pharmacy sale', body:`Bill #${invoiceId} • ${money(total)} (${mode})`, tag:'pharmacy'});} }catch{}
 
       // Emit bus & reset UI
