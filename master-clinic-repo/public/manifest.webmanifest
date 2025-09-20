@@ -1,12 +1,25 @@
 {
   "name": "Dr. Charan Child Clinic",
-  "short_name": "ChildClinic",
-  "start_url": "./login.html",
+  "short_name": "Child Clinic",
+  "description": "PWA for Dr. Charan Child Clinic — bookings, approvals, patients, pharmacy, lab, and analytics. Works fully offline.",
+  "start_url": "/login.html",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#0b0d10",
   "theme_color": "#17B26A",
   "icons": [
-    { "src": "./assets/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "./assets/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/public/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/public/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
