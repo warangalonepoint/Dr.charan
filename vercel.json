@@ -3,7 +3,6 @@
   "trailingSlash": false,
   "redirects": [
     { "source": "/", "destination": "/login.html", "permanent": false },
-    { "source": "/login", "destination": "/login.html", "permanent": false },
     { "source": "/dashboard", "destination": "/dashboard.html", "permanent": false },
     { "source": "/doctor", "destination": "/dashboard.html", "permanent": false },
     { "source": "/supervisor", "destination": "/supervisor-dashboard.html", "permanent": false },
