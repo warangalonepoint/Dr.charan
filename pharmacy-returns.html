@@ -1,0 +1,109 @@
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pharmacy Returns — Dr. Charan Child Clinic</title>
+<link rel="manifest" href="./public/manifest.webmanifest"><link rel="icon" href="./public/assets/icon-192.png">
+<link rel="stylesheet" href="./styles/styles.css"><meta name="theme-color" content="#17B26A"/>
+<style>
+  .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px} @media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .list{max-height:420px;overflow:auto}.row{padding:.5rem;border-bottom:1px solid var(--ring);display:flex;justify-content:space-between;gap:8px;align-items:center;cursor:pointer}
+  .row:hover{background:rgba(255,255,255,.04)} .mono{font-family:ui-monospace,Menlo,Consolas,monospace} .smallmuted{font-size:.85rem;color:var(--muted)}
+  .cart{max-height:380px;overflow:auto}.qty{width:6rem}
+</style></head><body>
+<div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
+<div class="topbar"><button class="btn" id="themeBtn">Theme</button><button class="btn" id="clearCacheBtn">Clear Cache</button><button class="btn" id="logoutBtn">Logout</button></div>
+
+<div class="app"><div class="page-card">
+  <h2 style="margin:0 0 6px">Pharmacy — Returns</h2>
+  <div class="grid">
+    <div class="page-card">
+      <h3 style="margin-top:0">Items</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="q" class="in" placeholder="Search (name / sku / barcode)" style="flex:1">
+      </div>
+      <div class="list" id="items"></div>
+    </div>
+    <div class="page-card">
+      <h3 style="margin-top:0">Return Cart</h3>
+      <div class="page-card" style="padding:10px;margin-bottom:8px">
+        <label class="small">Return Type</label>
+        <select id="rtype" class="in sel">
+          <option value="sale-return">Sale Return (↑ stock)</option>
+          <option value="purchase-return">Purchase Return (↓ stock)</option>
+        </select>
+      </div>
+      <div class="cart" id="cart"></div>
+      <div style="height:8px"></div>
+      <div style="display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <input id="party" class="in mono" placeholder="Party (optional)" style="max-width:260px">
+        <div class="pill">Total: <strong id="total">₹0.00</strong></div>
+      </div>
+      <div style="height:8px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" id="clearBtn">Clear</button>
+        <button class="btn primary" id="saveBtn">Save Return</button>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+<script src="./scripts/data-wire.js"></script>
+<script type="module">
+  import db from './scripts/db.js'; import {emitClinicChange} from './scripts/data-wire.js';
+  const html=document.documentElement,saved=localStorage.getItem('theme')||'dark';html.setAttribute('data-theme',saved);
+  themeBtn.onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n)};
+  logoutBtn.onclick=()=>{localStorage.removeItem('role');location.href='./login.html'};
+  clearCacheBtn.onclick=async()=>{if(!confirm('Clear caches + DB?'))return;if('caches'in window){const ns=await caches.keys();for(const n of ns)await caches.delete(n)}localStorage.clear();location.reload()};
+
+  const E=id=>document.getElementById(id), money=v=>'₹'+Number(v||0).toFixed(2), today=()=>new Date().toISOString().slice(0,10);
+  const itemsEl=E('items'), q=E('q'), cartEl=E('cart'), totalEl=E('total');
+
+  async function renderItems(){
+    const s=(q.value||'').toLowerCase(); let rows=await db.pharmacyItems.toArray();
+    if(s){rows=rows.filter(r=>[r.name,r.sku,r.barcode].map(x=>(x||'').toLowerCase()).join('|').includes(s));}
+    rows.sort((a,b)=>(a.name||'').localeCompare(b.name||'')); itemsEl.innerHTML='';
+    rows.forEach(it=>{ const div=document.createElement('div'); div.className='row';
+      div.innerHTML=`<div><strong>${it.name}</strong> <span class="smallmuted">${it.sku||''}</span><div class="smallmuted mono">Stock: ${it.stock||0}</div></div><div><button class="btn">Add</button></div>`;
+      div.querySelector('button').onclick=()=>addToCart(it); itemsEl.appendChild(div);
+    });
+  }
+  q.addEventListener('input',renderItems);
+
+  let cart=[]; function total(){return cart.reduce((s,l)=>s+(Number(l.qty||0)*Number(l.price||0)),0)}
+  function renderCart(){
+    cartEl.innerHTML=''; if(!cart.length){cartEl.innerHTML='<div class="smallmuted">Cart is empty.</div>'; totalEl.textContent=money(0); return;}
+    cart.forEach((l,i)=>{ const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`<div><strong>${l.name}</strong> <span class="smallmuted">${l.sku||''}</span></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" class="in qty mono" value="${l.qty}" step="1">
+          <input type="number" class="in qty mono" value="${l.price}" step=".01">
+          <button class="btn">X</button>
+        </div>`;
+      const [qIn,pIn,del]=row.querySelectorAll('input,button'); qIn.onchange=()=>{l.qty=Number(qIn.value||0); totalEl.textContent=money(total())};
+      pIn.onchange=()=>{l.price=Number(pIn.value||0); totalEl.textContent=money(total())};
+      del.onclick=()=>{cart.splice(i,1); renderCart()}; cartEl.appendChild(row);
+    }); totalEl.textContent=money(total());
+  }
+  function addToCart(it){ cart.push({itemId:it.id,name:it.name,sku:it.sku,qty:1,price:0}); renderCart(); }
+  clearBtn.onclick=()=>{cart=[]; renderCart();};
+
+  saveBtn.onclick=async()=>{
+    if(!cart.length){alert('Cart is empty');return;}
+    const date=today(), type=E('rtype').value, party=E('party').value||null, tot=total();
+    const id=await db.invoices.add({date,type,total:tot,party});
+    for(const l of cart){
+      await db.invoiceItems.add({invoiceId:id,sku:l.sku||null,name:l.name,qty:Number(l.qty||0),price:Number(l.price||0),party});
+      const it=await db.pharmacyItems.get(l.itemId);
+      if(it){
+        const delta = (type==='sale-return') ? +Number(l.qty||0) : -Number(l.qty||0);
+        await db.pharmacyItems.update(it.id,{stock:Number(it.stock||0)+delta});
+      }
+    }
+    emitClinicChange('pharmacy:sale',{invoiceId:id,date,total:tot});
+    cart=[]; renderCart(); E('party').value=''; alert('Saved return #'+id);
+  };
+
+  renderItems(); renderCart();
+</script></body></html>

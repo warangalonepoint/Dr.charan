@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Doctor Hub — Dr. Charan Child Clinic</title>
+  <link rel="manifest" href="./public/manifest.webmanifest">
+  <link rel="icon" href="./public/assets/icon-192.png">
+  <link rel="stylesheet" href="./styles/styles.css">
+  <meta name="theme-color" content="#17B26A"/>
+  <style>
+    /* charts row styling (local to this page) */
+    .charts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    @media (max-width:1100px){.charts{grid-template-columns:1fr}}
+    .chart-card{background:var(--card);border:1px solid var(--ring);border-radius:var(--card-radius);box-shadow:var(--shadow);padding:12px}
+    .chart-wrap{height:260px}
+    .chart-wrap canvas{width:100%;height:100%}
+  </style>
+</head>
+<body>
+  <!-- Banner CARD (locked on all pages) -->
+  <div class="hero-card">
+    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
+  </div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="btn" id="themeBtn">Theme</button>
+    <button class="btn" id="clearCacheBtn">Clear Cache</button>
+    <button class="btn" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="app">
+    <div class="page-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div>
+          <h2 style="margin:0 0 6px">Doctor Hub</h2>
+          <p class="small" style="margin:0">Daily tools & live KPIs</p>
+        </div>
+        <span class="pill">Today: <span id="todayStr"></span></span>
+      </div>
+
+      <!-- Charts row -->
+      <div style="height:10px"></div>
+      <div class="charts">
+        <div class="chart-card">
+          <div class="small" style="margin-bottom:6px">Sales (last 7 days)</div>
+          <div class="chart-wrap"><canvas id="sales7Chart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="small" style="margin-bottom:6px">Bookings (today) — by status</div>
+          <div class="chart-wrap"><canvas id="bookingsPie"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="small" style="margin-bottom:6px">Revenue mix (7 days) — Lab vs Pharmacy</div>
+          <div class="chart-wrap"><canvas id="mix7Chart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- 8 colorful tiles -->
+      <div style="height:14px"></div>
+      <div class="tiles">
+        <a class="tile blue"   href="./analytics.html"><h3>Analytics</h3><div class="knum" id="kRev7">₹0</div></a>
+        <a class="tile orange" href="./supervisor.html"><h3>Approvals</h3><div class="knum" id="kPending">0</div></a>
+        <a class="tile green"  href="./patients-hub.html"><h3>Patients Hub</h3><div class="knum" id="kPatients">0</div></a>
+        <a class="tile purple" href="./pharmacy.html"><h3>Pharmacy Hub</h3><div class="knum" id="kInv">0</div></a>
+        <a class="tile pink"   href="./lab-orders.html"><h3>Lab</h3><div class="knum" id="kLab">0</div></a>
+        <a class="tile orange" href="./staff.html"><h3>Staff</h3><div class="knum" id="kStaff">0</div></a>
+        <a class="tile cyan"   href="./pharmacy-reports.html"><h3>Reports</h3><div class="knum" id="kReports">0</div></a>
+        <a class="tile red"    href="./settings.html"><h3>Settings</h3><div class="knum">⚙</div></a>
+      </div>
+
+      <!-- Quick actions -->
+      <div style="height:14px"></div>
+      <div class="page-card" style="padding:12px">
+        <h3 style="margin:0 0 8px">Quick Actions</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn" href="./bookings.html">New Booking</a>
+          <a class="btn" href="./patients-registry.html">New Patient</a>
+          <a class="btn" href="./pharmacy-sales.html">New Sale</a>
+          <a class="btn" href="./lab-orders.html">New Lab Order</a>
+          <a class="btn" href="./booking-status.html">Booking Status Board</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+  <!-- Vendor (Chart.js local OFFLINE build required at this path) -->
+  <script src="./vendor/chart.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- App scripts -->
+  <script src="./scripts/sw-update.js"></script>
+
+  <!-- Dashboard logic -->
+  <script type="module">
+    import db from './scripts/db.js';
+    import { onClinicChange } from './scripts/data-wire.js';
+    import { requireRole } from './scripts/auth.js';
+
+    // Optional guard; comment out if you don't want role gating
+    // requireRole(['doctor']);
+
+    const E = id => document.getElementById(id);
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const sum = (arr, sel) => arr.reduce((s,r)=>s+Number(sel(r)||0),0);
+
+    // set date badge
+    E('todayStr').textContent = todayISO();
+
+    // ===== KPI refresh =====
+    async function refreshKPIs(){
+      const d = todayISO();
+
+      // Approvals: today's pending only
+      const apptsToday = await db.appointments.where('date').equals(d).toArray();
+      E('kPending').textContent = apptsToday.filter(a => (a.status||'pending')==='pending').length;
+
+      // Patients (total)
+      E('kPatients').textContent = await db.patients.count();
+
+      // Pharmacy invoices (today)
+      const invToday = await db.invoices.where('date').equals(d).toArray();
+      E('kInv').textContent = invToday.length;
+
+      // Lab (today)
+      E('kLab').textContent = await db.labInvoices.where('date').equals(d).count();
+
+      // Staff (total)
+      E('kStaff').textContent = await db.staff.count();
+
+      // Reports KPI — proxy: last 7d invoice count
+      const from7 = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
+      const inv7 = await db.invoices.where('date').between(from7,d,true,true).toArray();
+      E('kReports').textContent = inv7.length;
+
+      // 7d net revenue (sales - sale-returns)
+      const net7 = sum(inv7.filter(i=>i.type==='sale'), r=>r.total) - sum(inv7.filter(i=>i.type==='sale-return'), r=>r.total);
+      E('kRev7').textContent = '₹' + Number(net7||0).toFixed(2);
+    }
+
+    // ===== Charts =====
+    let salesChart, bookingsPie, mixChart;
+
+    function safeChart(ctx, cfg){
+      try{ return new window.Chart(ctx, cfg); }catch{ return null; }
+    }
+    function tokenColors(){
+      const root = getComputedStyle(document.documentElement);
+      return {
+        accent:  root.getPropertyValue('--accent').trim()   || '#1D75F0',
+        accent2: root.getPropertyValue('--accent-2').trim() || '#EF2F87',
+        ok:      root.getPropertyValue('--ok').trim()       || '#22c55e',
+        warn:    root.getPropertyValue('--warn').trim()     || '#f59e0b',
+        bad:     root.getPropertyValue('--bad').trim()      || '#ef4444'
+      };
+    }
+
+    async function buildSales7(){
+      const d0=new Date(); d0.setHours(0,0,0,0);
+      const labels=[]; const map={}; const keyOf=dt=>dt.toISOString().slice(0,10);
+      for(let i=6;i>=0;i--){ const dt=new Date(d0.getTime()-i*86400000); const k=keyOf(dt); labels.push(k); map[k]=0; }
+      const first=labels[0], last=labels[labels.length-1];
+
+      const inv=await db.invoices.where('date').between(first,last,true,true).toArray();
+      inv.forEach(v=>{
+        const k=v.date; if(!(k in map)) return;
+        if(v.type==='sale') map[k]+=Number(v.total||0);
+        if(v.type==='sale-return') map[k]-=Number(v.total||0);
+      });
+
+      const data=labels.map(k=>map[k]||0);
+      const {accent}=tokenColors();
+      const ctx=document.getElementById('sales7Chart').getContext('2d');
+      salesChart = safeChart(ctx,{
+        type:'line',
+        data:{labels,datasets:[{label:'Net Sales',data,tension:.35,borderColor:accent,fill:false}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(128,128,128,.2)'}}}}
+      });
+    }
+
+    async function buildBookingsPie(){
+      const d=todayISO();
+      const list=await db.appointments.where('date').equals(d).toArray();
+      const groups={pending:0, approved:0, done:0, cancelled:0};
+      for(const a of list){ const s=(a.status||'pending'); groups[s]=(groups[s]||0)+1; }
+      const {ok,warn,bad,accent} = tokenColors();
+      const ctx=document.getElementById('bookingsPie').getContext('2d');
+      bookingsPie = safeChart(ctx,{
+        type:'pie',
+        data:{ labels:['Pending','Approved','Done','Cancelled'],
+               datasets:[{ data:[groups.pending,groups.approved,groups.done,groups.cancelled],
+                           backgroundColor:[warn,accent,ok,bad] }]},
+        options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom'}}}
+      });
+    }
+
+    async function buildMix7(){
+      const d0=new Date(); d0.setHours(0,0,0,0);
+      const first=new Date(d0.getTime()-6*86400000).toISOString().slice(0,10);
+      const last=d0.toISOString().slice(0,10);
+
+      const inv7 = await db.invoices.where('date').between(first,last,true,true).toArray();
+      const netPh = sum(inv7.filter(i=>i.type==='sale'), r=>r.total) - sum(inv7.filter(i=>i.type==='sale-return'), r=>r.total);
+
+      const lab7 = await db.labInvoices.where('date').between(first,last,true,true).toArray();
+      const labTot = sum(lab7, r=>r.amount);
+
+      const {accent,accent2} = tokenColors();
+      const ctx=document.getElementById('mix7Chart').getContext('2d');
+      mixChart = safeChart(ctx,{
+        type:'doughnut',
+        data:{ labels:['Pharmacy','Lab'], datasets:[{ data:[netPh,labTot], backgroundColor:[accent,accent2]}]},
+        options:{ responsive:true, maintainAspectRatio:false, cutout:'55%', plugins:{legend:{position:'bottom'}}}
+      });
+    }
+
+    async function buildCharts(){
+      await Promise.all([buildSales7(), buildBookingsPie(), buildMix7()]);
+    }
+
+    async function refreshAll(){
+      await refreshKPIs();
+      if(salesChart?.destroy) salesChart.destroy();
+      if(bookingsPie?.destroy) bookingsPie.destroy();
+      if(mixChart?.destroy) mixChart.destroy();
+      await buildCharts();
+    }
+
+    // Initial draw
+    await refreshKPIs();
+    await buildCharts();
+
+    // Live refresh when data changes (seeding, clearing, cross-tab events)
+    onClinicChange(()=>refreshAll());
+
+    // Also refresh when tab becomes visible (e.g., returning from Settings)
+    document.addEventListener('visibilitychange', ()=>{
+      if(!document.hidden) refreshAll();
+    });
+
+    // Safety: periodic refresh
+    setInterval(refreshAll, 30000);
+
+    // Clear cache / Logout in this module scope
+    document.getElementById('clearCacheBtn').onclick=async()=>{
+      if(!confirm('Clear caches + DB?')) return;
+      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+      await db.delete();
+      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+      location.reload();
+    };
+    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+  </script>
+
+  <!-- Theme toggle (kept simple and global) -->
+  <script>
+    const html=document.documentElement;
+    const saved=localStorage.getItem('theme')||'dark';
+    html.setAttribute('data-theme',saved);
+    document.getElementById('themeBtn')?.addEventListener('click',()=>{
+      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+      html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+      try{ window.dispatchEvent(new CustomEvent('theme:changed')); }catch{}
+    });
+  </script>
+</body>
+</html>

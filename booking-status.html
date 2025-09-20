@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Booking Status — Dr. Charan Child Clinic</title>
+  <link rel="manifest" href="./public/manifest.webmanifest">
+  <link rel="icon" href="./public/assets/icon-192.png">
+  <link rel="stylesheet" href="./styles/styles.css">
+  <meta name="theme-color" content="#17B26A"/>
+  <style>
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+    .kpi{background:var(--card);border:1px solid var(--ring);border-radius:var(--card-radius);
+         box-shadow:var(--shadow);padding:16px;text-align:center}
+    .kpi .label{font-size:.9rem;color:var(--muted);margin-bottom:6px}
+    .kpi .value{font-size:3rem;font-weight:900;letter-spacing:.5px}
+    .kpi.now .value{color:var(--accent)}
+    .kpi.approved .value{color:var(--ok)}
+    .kpi.done .value{color:var(--accent-2)}
+    .board{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+    .board-card{background:var(--card);border:1px solid var(--ring);border-radius:var(--card-radius);box-shadow:var(--shadow);padding:12px}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    .big{font-size:2.2rem;font-weight:800}
+    .queue li{display:flex;justify-content:space-between;padding:.5rem;border-bottom:1px solid var(--ring)}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <!-- Banner CARD -->
+  <div class="hero-card">
+    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
+  </div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="btn" id="themeBtn">Theme</button>
+    <button class="btn" id="clearCacheBtn">Clear Cache</button>
+    <button class="btn" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="app">
+    <div class="page-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0 0 6px">Booking Status</h2>
+          <div class="small">Public board — Now Serving & Today’s KPIs</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span class="pill">Date: <input id="day" type="date" class="in" style="width:12rem"></span>
+          <span class="pill">Mode: <span id="mode" class="mono">appointments</span></span>
+          <span class="pill">Auto refresh</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <!-- KPI row -->
+    <div class="kpis">
+      <div class="kpi now">
+        <div class="label">Now Serving (highest approved not done)</div>
+        <div class="value mono" id="nowServing">—</div>
+      </div>
+      <div class="kpi approved">
+        <div class="label">Approved Today</div>
+        <div class="value mono" id="kApproved">0</div>
+      </div>
+      <div class="kpi done">
+        <div class="label">Done Today</div>
+        <div class="value mono" id="kDone">0</div>
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <!-- Queues -->
+    <div class="board">
+      <div class="board-card">
+        <h3 style="margin-top:0">Queue — Approved</h3>
+        <ul class="queue" id="qApproved"></ul>
+        <div class="small muted" id="aEmpty" style="display:none">No approved bookings.</div>
+      </div>
+      <div class="board-card">
+        <h3 style="margin-top:0">Queue — Pending</h3>
+        <ul class="queue" id="qPending"></ul>
+        <div class="small muted" id="pEmpty" style="display:none">No pending bookings.</div>
+      </div>
+      <div class="board-card">
+        <h3 style="margin-top:0">Recently Done</h3>
+        <ul class="queue" id="qDone"></ul>
+        <div class="small muted" id="dEmpty" style="display:none">No done bookings yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+  <!-- Vendor -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- App scripts -->
+  <script src="./scripts/sw-update.js"></script>
+  <script src="./scripts/data-wire.js"></script>
+  <script src="./scripts/auth.js"></script>
+
+  <script type="module">
+    import db from './scripts/db.js';
+    import { onClinicChange } from './scripts/data-wire.js';
+
+    // Role: public board is fine, but if role known enforce doctor/supervisor/frontoffice access quietly
+    const role=localStorage.getItem('role');
+    if(role && !['doctor','supervisor','frontoffice'].includes(role)){ localStorage.removeItem('role'); }
+
+    // Theme / housekeeping
+    const html=document.documentElement;
+    const saved=localStorage.getItem('theme')||'dark';
+    html.setAttribute('data-theme',saved);
+    document.getElementById('themeBtn').onclick=()=>{
+      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+      html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+    };
+    document.getElementById('clearCacheBtn').onclick=async()=>{
+      if(!confirm('Clear caches + DB?')) return;
+      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+      await db.delete();
+      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+      location.reload();
+    };
+    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+
+    const E=id=>document.getElementById(id);
+    const todayISO=()=> new Date().toISOString().slice(0,10);
+
+    E('day').value = todayISO();
+
+    const nowServing = E('nowServing');
+    const kApproved = E('kApproved');
+    const kDone = E('kDone');
+    const qApproved = E('qApproved');
+    const qPending = E('qPending');
+    const qDone = E('qDone');
+    const aEmpty=E('aEmpty'), pEmpty=E('pEmpty'), dEmpty=E('dEmpty');
+
+    let mode='appointments'; // or 'slots'
+
+    async function load(){
+      const date=E('day').value || todayISO();
+
+      // Prefer appointments
+      let appts = await db.appointments.where('date').equals(date).toArray();
+
+      if(appts.length){
+        mode='appointments'; E('mode').textContent='appointments';
+        renderFromAppointments(appts);
+      }else{
+        // fallback to slots
+        const slots = await db.slots.where('date').equals(date).toArray();
+        mode='slots'; E('mode').textContent='slots';
+        renderFromSlots(slots);
+      }
+    }
+
+    function setNowServingFromList(list, statusKey='status'){
+      // Highest approved token not done
+      const approved = list.filter(x=>(x[statusKey]||'pending')==='approved')
+                           .sort((a,b)=>(Number(b.token||0)-Number(a.token||0)));
+      const doneTokens = new Set(list.filter(x=>(x[statusKey]||'')==='done').map(x=>String(x.token||'')));
+      const cur = approved.find(x=>!doneTokens.has(String(x.token||'')));
+      nowServing.textContent = cur ? ('#'+(cur.token||'')+' • '+(cur.time||'')) : '—';
+    }
+
+    function renderQueues(approved, pending, done){
+      // KPIs
+      kApproved.textContent = approved.length;
+      kDone.textContent = done.length;
+
+      // Lists
+      const toLi=(x)=>`<li><span class="mono">#${x.token||''}</span> <span>${x.name||''}</span> <span class="mono">${x.time||''}</span></li>`;
+
+      qApproved.innerHTML = approved.map(toLi).join('');
+      qPending.innerHTML  = pending.map(toLi).join('');
+      qDone.innerHTML     = done.slice().sort((a,b)=>(Number(b.token||0)-Number(a.token||0))).slice(0,10).map(toLi).join('');
+
+      aEmpty.style.display = approved.length?'none':'';
+      pEmpty.style.display = pending.length?'none':'';
+      dEmpty.style.display = done.length?'none':'';
+    }
+
+    function renderFromAppointments(appts){
+      appts.sort((a,b)=> a.time.localeCompare(b.time) || (a.token||0)-(b.token||0));
+
+      const pending = appts.filter(a=>(a.status||'pending')==='pending');
+      const approved = appts.filter(a=>a.status==='approved');
+      const done = appts.filter(a=>a.status==='done');
+
+      setNowServingFromList(appts,'status');
+      renderQueues(approved,pending,done);
+    }
+
+    function renderFromSlots(slots){
+      const proj = slots.map(s=>({
+        time:s.time, token:s.token||'', name:s.name||'', status:s.apptStatus||'pending'
+      })).sort((a,b)=> a.time.localeCompare(b.time));
+
+      const pending = proj.filter(a=>a.status==='pending');
+      const approved = proj.filter(a=>a.status==='approved');
+      const done = proj.filter(a=>a.status==='done');
+
+      setNowServingFromList(proj,'status');
+      renderQueues(approved,pending,done);
+    }
+
+    // Initial + wiring
+    await load();
+    E('day').addEventListener('change', load);
+
+    // Live updates
+    onClinicChange(e=>{
+      if(['appointments:changed','slots:changed'].includes(e?.evt)) load();
+    });
+
+    // Periodic auto refresh (board-style)
+    setInterval(load, 15000);
+  </script>
+</body>
+</html>

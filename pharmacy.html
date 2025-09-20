@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Pharmacy Hub — Dr. Charan Child Clinic</title>
+  <link rel="manifest" href="./public/manifest.webmanifest">
+  <link rel="icon" href="./public/assets/icon-192.png">
+  <link rel="stylesheet" href="./styles/styles.css">
+  <meta name="theme-color" content="#17B26A"/>
+</head>
+<body>
+  <!-- Banner CARD -->
+  <div class="hero-card">
+    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
+  </div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="btn" id="themeBtn">Theme</button>
+    <button class="btn" id="clearCacheBtn">Clear Cache</button>
+    <button class="btn" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="app">
+    <div class="page-card">
+      <h2 style="margin-top:0">Pharmacy Hub</h2>
+      <p class="small">Sales, purchases, returns, inventory, reports, accounts, expiry, and utilities.</p>
+
+      <div class="tiles">
+        <a class="tile green"  href="./pharmacy-sales.html"><h3>Sales</h3></a>
+        <a class="tile blue"   href="./pharmacy-purchases.html"><h3>Purchases</h3></a>
+        <a class="tile orange" href="./pharmacy-returns.html"><h3>Returns</h3></a>
+        <a class="tile purple" href="./pharmacy-inventory.html"><h3>Inventory</h3></a>
+        <a class="tile cyan"   href="./pharmacy-reports.html"><h3>Reports</h3></a>
+        <a class="tile gray"   href="./pharmacy-accounts.html"><h3>Accounts</h3></a>
+        <a class="tile pink"   href="./pharmacy-expiry.html"><h3>Expiry</h3></a>
+        <a class="tile red"    href="./pharmacy-utilities.html"><h3>Utilities</h3></a>
+      </div>
+    </div>
+  </div>
+
+  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+  <script>
+    // Theme + housekeeping (same everywhere)
+    const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
+    html.setAttribute('data-theme',saved);
+    document.getElementById('themeBtn').onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n)};
+    document.getElementById('logoutBtn').onclick=()=>{localStorage.removeItem('role');location.href='./login.html'};
+    document.getElementById('clearCacheBtn').onclick=async()=>{ if(!confirm('Clear caches + DB?'))return; if('caches'in window){const ns=await caches.keys(); for(const n of ns) await caches.delete(n);} localStorage.clear(); location.reload(); };
+  </script>
+</body>
+</html>

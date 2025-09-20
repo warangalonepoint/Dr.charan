@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Supervisor — Dr. Charan Child Clinic</title>
+  <link rel="manifest" href="./public/manifest.webmanifest">
+  <link rel="icon" href="./public/assets/icon-192.png">
+  <link rel="stylesheet" href="./styles/styles.css">
+  <meta name="theme-color" content="#17B26A"/>
+  <style>
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}}
+    .krow{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .badge{display:inline-flex;align-items:center;gap:.35rem;border:1px solid var(--ring);border-radius:999px;padding:.25rem .6rem;font-size:.8rem}
+    .status{font-weight:700}
+    .status.pending{color:var(--warn)}
+    .status.approved{color:var(--accent)}
+    .status.done{color:var(--ok)}
+    .status.cancelled{color:var(--bad)}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    .row-actions{display:flex;gap:6px;flex-wrap:wrap}
+    .toolbar .btn{padding:.45rem .7rem}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <!-- Banner CARD -->
+  <div class="hero-card">
+    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
+  </div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="btn" id="themeBtn">Theme</button>
+    <button class="btn" id="clearCacheBtn">Clear Cache</button>
+    <button class="btn" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="app">
+    <div class="page-card">
+      <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+        <div>
+          <h2 style="margin:0 0 6px">Approvals</h2>
+          <div class="small">Approve, mark Done, or Cancel today’s bookings. Fallbacks to slots if needed.</div>
+        </div>
+        <div class="krow">
+          <span class="pill">Date: <input id="day" type="date" class="in" style="width:12rem"></span>
+          <input id="q" class="in" placeholder="Search (name / phone / PID)" style="width:16rem">
+          <button class="btn" id="refreshBtn">Refresh</button>
+        </div>
+      </div>
+
+      <div style="height:10px"></div>
+
+      <!-- KPIs -->
+      <div class="krow">
+        <span class="badge">Pending: <strong id="kPending">0</strong></span>
+        <span class="badge">Approved: <strong id="kApproved">0</strong></span>
+        <span class="badge">Done: <strong id="kDone">0</strong></span>
+        <span class="badge">Source: <span id="kMode" class="mono">appointments</span></span>
+      </div>
+    </div>
+
+    <div style="height:12px"></div>
+
+    <!-- Tables -->
+    <div class="page-card">
+      <h3 style="margin-top:0">Queue</h3>
+      <table class="tbl" id="tblAppointments" style="display:none">
+        <thead>
+          <tr>
+            <th>Time</th><th>Token</th><th>Name</th><th>Phone</th><th>Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rowsAppt"></tbody>
+      </table>
+
+      <table class="tbl" id="tblSlots" style="display:none">
+        <thead>
+          <tr>
+            <th>Time</th><th>Token</th><th>Name</th><th>Phone</th><th>Appt Status</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="rowsSlots"></tbody>
+      </table>
+
+      <div id="emptyMsg" class="small muted" style="display:none">No records for the selected day.</div>
+    </div>
+  </div>
+
+  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+  <!-- Vendor -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- App scripts -->
+  <script src="./scripts/sw-update.js"></script>
+  <script src="./scripts/data-wire.js"></script>
+  <script src="./scripts/auth.js"></script>
+
+  <script type="module">
+    import db from './scripts/db.js';
+    import { emitClinicChange, onClinicChange } from './scripts/data-wire.js';
+
+    // Role guard (supervisor primary; doctor allowed)
+    const role = localStorage.getItem('role');
+    if(!role){ location.href='./login.html'; }
+    if(!(role==='supervisor' || role==='doctor')){ alert('Supervisor only'); location.href='./login.html'; }
+
+    // Theme & housekeeping
+    const html=document.documentElement;
+    const saved=localStorage.getItem('theme')||'dark';
+    html.setAttribute('data-theme',saved);
+    document.getElementById('themeBtn').onclick=()=>{
+      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+      html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+    };
+    document.getElementById('clearCacheBtn').onclick=async()=>{
+      if(!confirm('Clear caches + DB?')) return;
+      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+      await db.delete();
+      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+      location.reload();
+    };
+    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+
+    // Helpers
+    const E=id=>document.getElementById(id);
+    const todayISO=()=> new Date().toISOString().slice(0,10);
+    E('day').value = todayISO();
+
+    const rowsAppt = E('rowsAppt');
+    const rowsSlots = E('rowsSlots');
+    const tblAppointments = E('tblAppointments');
+    const tblSlots = E('tblSlots');
+    const emptyMsg = E('emptyMsg');
+
+    let currentMode = 'appointments'; // or 'slots'
+    let filterText = '';
+
+    E('q').addEventListener('input',()=>{ filterText=E('q').value.toLowerCase(); render(); });
+    E('refreshBtn').onclick = () => loadDay();
+
+    E('day').addEventListener('change', loadDay);
+
+    async function loadDay(){
+      const date = E('day').value || todayISO();
+
+      // Try appointments first
+      let appts = await db.appointments.where('date').equals(date).toArray();
+
+      if(appts.length>0){
+        currentMode='appointments';
+        E('kMode').textContent='appointments';
+        // KPI
+        E('kPending').textContent = appts.filter(a=>(a.status||'pending')==='pending').length;
+        E('kApproved').textContent = appts.filter(a=>a.status==='approved').length;
+        E('kDone').textContent = appts.filter(a=>a.status==='done').length;
+
+        appts.sort((a,b)=> a.time.localeCompare(b.time) || (a.token||0)-(b.token||0));
+        renderAppts(appts);
+      }else{
+        // Fallback to slots
+        currentMode='slots';
+        E('kMode').textContent='slots';
+        const slots = await db.slots.where('date').equals(date).toArray();
+        const list = slots.map(s=>({
+          time:s.time, token:s.token||'', name:s.name||'', phone:s.phone||'',
+          apptStatus:s.apptStatus||'pending', key:s.key
+        })).sort((a,b)=> a.time.localeCompare(b.time));
+
+        // KPIs from slots.apptStatus
+        E('kPending').textContent = list.filter(x=>x.apptStatus==='pending').length;
+        E('kApproved').textContent = list.filter(x=>x.apptStatus==='approved').length;
+        E('kDone').textContent = list.filter(x=>x.apptStatus==='done').length;
+
+        renderSlots(list);
+      }
+    }
+
+    function renderAppts(items){
+      rowsAppt.innerHTML=''; rowsSlots.innerHTML='';
+      tblAppointments.style.display=''; tblSlots.style.display='none';
+      emptyMsg.style.display = items.length? 'none':'';
+
+      const f=filterText;
+      items
+        .filter(a=>{
+          if(!f) return true;
+          const hay=[a.name,a.phone,a.pid].map(x=>(x||'').toString().toLowerCase()).join('|');
+          return hay.includes(f);
+        })
+        .forEach(a=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML = `
+            <td class="mono">${a.time||''}</td>
+            <td class="mono">${a.token||''}</td>
+            <td>${a.name||''}<div class="small muted">${a.reason||''}</div></td>
+            <td class="mono">${a.phone||''}</td>
+            <td><span class="status ${(a.status||'pending')}">${a.status||'pending'}</span></td>
+            <td class="row-actions">
+              <button class="btn" data-act="approve">Approve</button>
+              <button class="btn" data-act="done">Done</button>
+              <button class="btn" data-act="cancel">Cancel</button>
+            </td>
+          `;
+          tr.querySelector('[data-act="approve"]').onclick = ()=> setApptStatus(a,'approved');
+          tr.querySelector('[data-act="done"]').onclick    = ()=> setApptStatus(a,'done');
+          tr.querySelector('[data-act="cancel"]').onclick  = ()=> setApptStatus(a,'cancelled');
+          rowsAppt.appendChild(tr);
+        });
+    }
+
+    function renderSlots(items){
+      rowsSlots.innerHTML=''; rowsAppt.innerHTML='';
+      tblSlots.style.display=''; tblAppointments.style.display='none';
+      emptyMsg.style.display = items.length? 'none':'';
+
+      const f=filterText;
+      items
+        .filter(a=>{
+          if(!f) return true;
+          const hay=[a.name,a.phone].map(x=>(x||'').toString().toLowerCase()).join('|');
+          return hay.includes(f);
+        })
+        .forEach(s=>{
+          const tr=document.createElement('tr');
+          tr.innerHTML = `
+            <td class="mono">${s.time||''}</td>
+            <td class="mono">${s.token||''}</td>
+            <td>${s.name||''}</td>
+            <td class="mono">${s.phone||''}</td>
+            <td><span class="status ${s.apptStatus}">${s.apptStatus}</span></td>
+            <td class="row-actions">
+              <button class="btn" data-act="approve">Approve</button>
+              <button class="btn" data-act="done">Done</button>
+              <button class="btn" data-act="cancel">Cancel</button>
+            </td>
+          `;
+          tr.querySelector('[data-act="approve"]').onclick = ()=> setSlotStatus(s,'approved');
+          tr.querySelector('[data-act="done"]').onclick    = ()=> setSlotStatus(s,'done');
+          tr.querySelector('[data-act="cancel"]').onclick  = ()=> setSlotStatus(s,'cancelled');
+          rowsSlots.appendChild(tr);
+        });
+    }
+
+    async function setApptStatus(a, status){
+      const patch = { status, updatedAt:Date.now() };
+      if(status==='approved') patch.approvedAt = Date.now();
+      if(status==='done')     patch.doneAt     = Date.now();
+      await db.appointments.update(a.id, patch);
+      emitClinicChange('appointments:changed',{id:a.id,date:a.date,status});
+      loadDay();
+    }
+
+    async function setSlotStatus(s, apptStatus){
+      const slot = await db.slots.where('key').equals(s.key).first();
+      if(!slot) return;
+      await db.slots.update(slot.id,{ apptStatus });
+      emitClinicChange('slots:changed',{key:s.key, apptStatus});
+      loadDay();
+    }
+
+    async function render(){ await loadDay(); }
+
+    // Initial load
+    await loadDay();
+
+    // Live updates from other tabs
+    onClinicChange(e=>{
+      if(['appointments:changed','slots:changed'].includes(e?.evt)) loadDay();
+    });
+  </script>
+</body>
+</html>
