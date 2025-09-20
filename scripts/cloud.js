@@ -13,8 +13,8 @@
   }
 
   // --- Read config (allow env injection on Vercel) ---
-  var SUPA_URL = (window.__SUPA && window.__SUPA.url) || '';
-  var SUPA_KEY = (window.__SUPA && window.__SUPA.key) || '';
+  var SUPA_URL = (window.__SUPA && window.__SUPA.https://mngkgitmcudogekzmimv.supabase.co) || '';
+  var SUPA_KEY = (window.__SUPA && window.__SUPA.eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I) || '';
   if (!SUPA_URL || !SUPA_KEY) {
     console.warn('[cloud] Missing window.__SUPA {url,key}. Using empty client -> calls will fail.');
   }
