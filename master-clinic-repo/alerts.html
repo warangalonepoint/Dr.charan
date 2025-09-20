@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Alerts — Dr. Charan Child Clinic</title>
+  <link rel="manifest" href="./public/manifest.webmanifest">
+  <link rel="icon" href="./public/assets/icon-192.png">
+  <link rel="stylesheet" href="./styles/styles.css">
+  <meta name="theme-color" content="#17B26A"/>
+  <style>
+    .tbl { width:100%; border-collapse:collapse; margin-top:10px }
+    .tbl th,.tbl td{ padding:.6rem; border-bottom:1px solid var(--ring); text-align:left }
+    .tbl th{ background:var(--card); }
+  </style>
+</head>
+<body>
+  <!-- Banner -->
+  <div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <button class="btn" id="themeBtn">Theme</button>
+    <button class="btn" id="clearCacheBtn">Clear Cache</button>
+    <button class="btn" id="logoutBtn">Logout</button>
+  </div>
+
+  <div class="app">
+    <div class="page-card">
+      <h2 style="margin:0 0 6px">Alerts</h2>
+      <p class="small">System-generated alerts (e.g. pharmacy low-stock).</p>
+
+      <table class="tbl" id="alertsTbl">
+        <thead>
+          <tr><th>Date</th><th>Type</th><th>Message</th><th>SKU</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+
+  <!-- Dexie + DB -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+  <script src="./scripts/db.js"></script>
+
+  <script>
+    // Theme
+    const html=document.documentElement;
+    html.setAttribute('data-theme', localStorage.getItem('theme')||'dark');
+    document.getElementById('themeBtn').onclick=()=>{
+      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+      html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+    };
+    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+    document.getElementById('clearCacheBtn').onclick=async()=>{
+      if(!confirm('Clear caches+DB?')) return;
+      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+      await db.delete();
+      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+      location.reload();
+    };
+
+    // Populate alerts
+    async function loadAlerts(){
+      const tbody=document.querySelector('#alertsTbl tbody');
+      tbody.innerHTML='';
+      const rows=await db.alerts.orderBy('date').reverse().toArray();
+      for(const r of rows){
+        const tr=document.createElement('tr');
+        tr.innerHTML=`<td>${r.date}</td><td>${r.type}</td><td>${r.message}</td><td>${r.sku||''}</td>`;
+        tbody.appendChild(tr);
+      }
+    }
+
+    loadAlerts();
+    // Optional: refresh live when alerts table changes
+    window.addEventListener('storage', e=>{
+      if(e.key==='clinic.pulse'){ loadAlerts(); }
+    });
+  </script>
+</body>
+</html>
