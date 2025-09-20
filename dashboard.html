@@ -87,66 +87,49 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Vendor (Chart.js local OFFLINE build required at this path) -->
+  <!-- Vendor -->
   <script src="./vendor/chart.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 
-  <!-- App scripts -->
+  <!-- Supabase client + cloud adapter -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script>
+    /* Provided keys (you can switch to Vercel env injection later) */
+    window.__SUPA = {
+      url: "https://mngkgitmcudogekzmimv.supabase.co",
+      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
+    };
+  </script>
+  <script src="./scripts/cloud.js"></script>
   <script src="./scripts/sw-update.js"></script>
 
-  <!-- Dashboard logic -->
-  <script type="module">
-    import db from './scripts/db.js';
-    import { onClinicChange } from './scripts/data-wire.js';
-    import { requireRole } from './scripts/auth.js';
-
-    // Optional guard; comment out if you don't want role gating
-    // requireRole(['doctor']);
-
+  <!-- Dashboard logic (cloud-only) -->
+  <script>
     const E = id => document.getElementById(id);
     const todayISO = () => new Date().toISOString().slice(0,10);
-    const sum = (arr, sel) => arr.reduce((s,r)=>s+Number(sel(r)||0),0);
+    const sum = (arr, sel) => (arr||[]).reduce((s,r)=>s+Number(sel(r)||0),0);
 
     // set date badge
     E('todayStr').textContent = todayISO();
 
-    // ===== KPI refresh =====
-    async function refreshKPIs(){
-      const d = todayISO();
+    // ----- Theme / Topbar -----
+    (function topbar(){
+      const html=document.documentElement;
+      const saved=localStorage.getItem('theme')||'dark';
+      html.setAttribute('data-theme',saved);
+      E('themeBtn').onclick=()=>{
+        const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+        html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+      };
+      E('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+      E('clearCacheBtn').onclick=async()=>{
+        if(!confirm('Clear caches + localStorage?')) return;
+        if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+        const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+        location.reload();
+      };
+    })();
 
-      // Approvals: today's pending only
-      const apptsToday = await db.appointments.where('date').equals(d).toArray();
-      E('kPending').textContent = apptsToday.filter(a => (a.status||'pending')==='pending').length;
-
-      // Patients (total)
-      E('kPatients').textContent = await db.patients.count();
-
-      // Pharmacy invoices (today)
-      const invToday = await db.invoices.where('date').equals(d).toArray();
-      E('kInv').textContent = invToday.length;
-
-      // Lab (today)
-      E('kLab').textContent = await db.labInvoices.where('date').equals(d).count();
-
-      // Staff (total)
-      E('kStaff').textContent = await db.staff.count();
-
-      // Reports KPI — proxy: last 7d invoice count
-      const from7 = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
-      const inv7 = await db.invoices.where('date').between(from7,d,true,true).toArray();
-      E('kReports').textContent = inv7.length;
-
-      // 7d net revenue (sales - sale-returns)
-      const net7 = sum(inv7.filter(i=>i.type==='sale'), r=>r.total) - sum(inv7.filter(i=>i.type==='sale-return'), r=>r.total);
-      E('kRev7').textContent = '₹' + Number(net7||0).toFixed(2);
-    }
-
-    // ===== Charts =====
-    let salesChart, bookingsPie, mixChart;
-
-    function safeChart(ctx, cfg){
-      try{ return new window.Chart(ctx, cfg); }catch{ return null; }
-    }
+    // ----- Colors for charts -----
     function tokenColors(){
       const root = getComputedStyle(document.documentElement);
       return {
@@ -157,35 +140,88 @@
         bad:     root.getPropertyValue('--bad').trim()      || '#ef4444'
       };
     }
+    function safeChart(ctx, cfg){ try{ return new window.Chart(ctx, cfg); }catch(e){ console.error(e); return null; } }
+
+    // ----- KPIs (cloud) -----
+    async function refreshKPIs(){
+      const d = todayISO();
+
+      // Approvals: today's pending only
+      const { data: apptsToday } = await cloud.selectWhere('appointments', { date:d });
+      const list = apptsToday || [];
+      E('kPending').textContent = list.filter(a => (a.status||'pending')==='pending').length;
+
+      // Patients (total)
+      const { data: pats } = await cloud.selectWhere('patients', {});
+      E('kPatients').textContent = (pats||[]).length;
+
+      // Pharmacy invoices (today)
+      const { data: invToday } = await cloud.selectWhere('invoices', { date:d });
+      E('kInv').textContent = (invToday||[]).length;
+
+      // Lab (today)
+      const { data: labToday } = await cloud.selectWhere('lab_invoices', { date:d });
+      E('kLab').textContent = (labToday||[]).length;
+
+      // Staff (total)
+      const { data: staff } = await cloud.selectWhere('staff', {});
+      E('kStaff').textContent = (staff||[]).length;
+
+      // Reports KPI — proxy: last 7d invoice count
+      const from7 = new Date(Date.now()-6*86400000).toISOString().slice(0,10);
+      const days = listDays(from7, d);
+      let inv7Count = 0, net7 = 0;
+      for(const day of days){
+        const { data: invd } = await cloud.selectWhere('invoices', { date:day });
+        const arr = invd||[];
+        inv7Count += arr.length;
+        net7 += sum(arr.filter(i=>i.type==='sale'), r=>r.total) - sum(arr.filter(i=>i.type==='sale-return'), r=>r.total);
+      }
+      E('kReports').textContent = inv7Count;
+      E('kRev7').textContent = '₹' + Number(net7||0).toFixed(2);
+    }
+
+    // ----- Helpers: date ranges -----
+    function listDays(fromISO, toISO){
+      const out=[]; const a=new Date(fromISO); const b=new Date(toISO);
+      a.setHours(0,0,0,0); b.setHours(0,0,0,0);
+      for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)){
+        out.push(d.toISOString().slice(0,10));
+      }
+      return out;
+    }
+
+    // ----- Charts (cloud) -----
+    let salesChart, bookingsPie, mixChart;
 
     async function buildSales7(){
-      const d0=new Date(); d0.setHours(0,0,0,0);
-      const labels=[]; const map={}; const keyOf=dt=>dt.toISOString().slice(0,10);
-      for(let i=6;i>=0;i--){ const dt=new Date(d0.getTime()-i*86400000); const k=keyOf(dt); labels.push(k); map[k]=0; }
-      const first=labels[0], last=labels[labels.length-1];
+      const today = new Date(); today.setHours(0,0,0,0);
+      const first = new Date(today.getTime()-6*86400000).toISOString().slice(0,10);
+      const last  = today.toISOString().slice(0,10);
+      const days  = listDays(first, last);
 
-      const inv=await db.invoices.where('date').between(first,last,true,true).toArray();
-      inv.forEach(v=>{
-        const k=v.date; if(!(k in map)) return;
-        if(v.type==='sale') map[k]+=Number(v.total||0);
-        if(v.type==='sale-return') map[k]-=Number(v.total||0);
-      });
+      const totals = [];
+      for(const day of days){
+        const { data: invd } = await cloud.selectWhere('invoices', { date:day });
+        const arr = invd || [];
+        const net = sum(arr.filter(i=>i.type==='sale'), r=>r.total) - sum(arr.filter(i=>i.type==='sale-return'), r=>r.total);
+        totals.push(net);
+      }
 
-      const data=labels.map(k=>map[k]||0);
-      const {accent}=tokenColors();
+      const {accent} = tokenColors();
       const ctx=document.getElementById('sales7Chart').getContext('2d');
       salesChart = safeChart(ctx,{
         type:'line',
-        data:{labels,datasets:[{label:'Net Sales',data,tension:.35,borderColor:accent,fill:false}]},
+        data:{labels:days,datasets:[{label:'Net Sales',data:totals,tension:.35,borderColor:accent,fill:false}]},
         options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{grid:{display:false}},y:{grid:{color:'rgba(128,128,128,.2)'}}}}
       });
     }
 
     async function buildBookingsPie(){
       const d=todayISO();
-      const list=await db.appointments.where('date').equals(d).toArray();
+      const { data: list } = await cloud.selectWhere('appointments', { date:d });
       const groups={pending:0, approved:0, done:0, cancelled:0};
-      for(const a of list){ const s=(a.status||'pending'); groups[s]=(groups[s]||0)+1; }
+      (list||[]).forEach(a=>{ const s=(a.status||'pending'); groups[s]=(groups[s]||0)+1; });
       const {ok,warn,bad,accent} = tokenColors();
       const ctx=document.getElementById('bookingsPie').getContext('2d');
       bookingsPie = safeChart(ctx,{
@@ -198,21 +234,24 @@
     }
 
     async function buildMix7(){
-      const d0=new Date(); d0.setHours(0,0,0,0);
-      const first=new Date(d0.getTime()-6*86400000).toISOString().slice(0,10);
-      const last=d0.toISOString().slice(0,10);
+      const today = new Date(); today.setHours(0,0,0,0);
+      const first = new Date(today.getTime()-6*86400000).toISOString().slice(0,10);
+      const last  = today.toISOString().slice(0,10);
+      const days  = listDays(first, last);
 
-      const inv7 = await db.invoices.where('date').between(first,last,true,true).toArray();
-      const netPh = sum(inv7.filter(i=>i.type==='sale'), r=>r.total) - sum(inv7.filter(i=>i.type==='sale-return'), r=>r.total);
-
-      const lab7 = await db.labInvoices.where('date').between(first,last,true,true).toArray();
-      const labTot = sum(lab7, r=>r.amount);
+      let pharm=0, lab=0;
+      for(const day of days){
+        const { data: invd } = await cloud.selectWhere('invoices', { date:day });
+        pharm += sum((invd||[]).filter(i=>i.type==='sale'), r=>r.total) - sum((invd||[]).filter(i=>i.type==='sale-return'), r=>r.total);
+        const { data: l } = await cloud.selectWhere('lab_invoices', { date:day });
+        lab += sum(l||[], r=>r.amount);
+      }
 
       const {accent,accent2} = tokenColors();
       const ctx=document.getElementById('mix7Chart').getContext('2d');
       mixChart = safeChart(ctx,{
         type:'doughnut',
-        data:{ labels:['Pharmacy','Lab'], datasets:[{ data:[netPh,labTot], backgroundColor:[accent,accent2]}]},
+        data:{ labels:['Pharmacy','Lab'], datasets:[{ data:[pharm,lab], backgroundColor:[accent,accent2]}]},
         options:{ responsive:true, maintainAspectRatio:false, cutout:'55%', plugins:{legend:{position:'bottom'}}}
       });
     }
@@ -229,30 +268,19 @@
       await buildCharts();
     }
 
-    // Initial draw
-    await refreshKPIs();
-    await buildCharts();
+    // ----- Init -----
+    (async ()=>{ await refreshAll(); })();
 
-    // Live refresh when data changes (seeding, clearing, cross-tab events)
-    onClinicChange(()=>refreshAll());
-
-    // Also refresh when tab becomes visible (e.g., returning from Settings)
-    document.addEventListener('visibilitychange', ()=>{
-      if(!document.hidden) refreshAll();
+    // ----- Live updates via Supabase Realtime -----
+    ;['appointments','invoices','lab_invoices'].forEach(t=>{
+      cloud.listen(t, ()=>{ refreshAll(); });
     });
+
+    // Also refresh when tab becomes visible
+    document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) refreshAll(); });
 
     // Safety: periodic refresh
     setInterval(refreshAll, 30000);
-
-    // Clear cache / Logout in this module scope
-    document.getElementById('clearCacheBtn').onclick=async()=>{
-      if(!confirm('Clear caches + DB?')) return;
-      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
-      await db.delete();
-      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
-      location.reload();
-    };
-    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
   </script>
 
   <!-- Theme toggle (kept simple and global) -->
