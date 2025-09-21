@@ -1,95 +1,80 @@
-<!-- scripts/pharmacy-seed.js -->
 <script>
-/**
- * Pharmacy seed / clear.
- * Exposes:
- *   window.seedPharmacyData()
- *   window.clearPharmacyData()
- *
- * Dual-mode (LOCAL via Dexie / CLOUD via cloud.js). Respects window.__FORCE_LOCAL_SEED__.
- */
+// pharmacy-seed.js
 (function(){
-  const cloud = (() => {
-    if (window.__FORCE_LOCAL_SEED__) return null;
-    if (!window.cloud || !window.cloud.mode) return null;
-    const { insert, upsert, remove } = window.cloud;
-    return { mode: window.cloud.mode, insert, upsert, remove };
-  })();
-
-  const money = (n)=>Number(n||0);
-  const today = ()=>new Date().toISOString().slice(0,10);
-
-  const items = [
-    { sku:"SEED-PARA-250", name:"Paracetamol 250mg", mrp:30,  barcode:"890000000001", stock:120 },
-    { sku:"SEED-PARA-500", name:"Paracetamol 500mg", mrp:38,  barcode:"890000000002", stock:180 },
-    { sku:"SEED-ZINCOV",   name:"Zincovit Syrup",    mrp:95,  barcode:"890000000003", stock:80  },
-    { sku:"SEED-AZITH",    name:"Azithromycin 250",  mrp:110, barcode:"890000000004", stock:70  },
-    { sku:"SEED-ORS",      name:"ORS 200ml",         mrp:22,  barcode:"890000000005", stock:200 },
-  ];
+  const hasCloud = !!(window.cloud && typeof window.cloud.insert === 'function');
+  let db;
+  async function ensureDB(){
+    if (db) return db;
+    if (!window.Dexie || !window.db) throw new Error('[pharm-seed] Dexie/db.js not loaded');
+    db = window.db || (await import('./db.js')).default;
+    return db;
+  }
+  function today(d=0){ const t=new Date(); t.setDate(t.getDate()+d); return t.toISOString().slice(0,10); }
 
   async function seedPharmacyData(){
-    if (cloud){
-      // upsert items by sku
-      for (const it of items){
-        await cloud.upsert('pharmacy_items', { sku: it.sku }, it, ['sku']);
-      }
-      // add a purchase invoice to demonstrate reports + stock movement
-      const invId = Date.now() % 100000;
-      await cloud.insert('invoices', { date: today(), type:'purchase', total: 5000, supplier:'Seeder', bill:'SEED-'+invId });
-      for (const it of items){
-        await cloud.insert('invoice_items', { invoiceId: invId, sku: it.sku, name: it.name, qty: 10, price: it.mrp, party:'Seeder' });
-      }
-      // add a receipt voucher to show accounts
-      await cloud.insert('vouchers', { date: today(), type:'receipt', amount: 2500, party:'Cash', note:'Seeder opening balance' });
-      alert('Cloud: Pharmacy items upserted + sample purchase and voucher added.');
-      return;
-    }
+    await ensureDB();
+    console.log('[pharm-seed] start');
 
-    // LOCAL (IndexedDB)
-    if (!window.db){ alert('db.js not loaded'); return; }
-    const db = window.db;
-
-    // items
+    const items = [
+      { name:'Paracetamol 250mg', sku:'SEED-PARA-250', mrp:35, stock:80, barcode:'PARA250' },
+      { name:'Cetrizine 10mg',   sku:'SEED-CET-10',   mrp:28, stock:90, barcode:'CET10' },
+      { name:'ORS 1L',           sku:'SEED-ORS-1L',   mrp:22, stock:60, barcode:'ORS1' }
+    ];
     for (const it of items){
-      const existing = await db.pharmacyItems.where('sku').equals(it.sku).first();
-      if (existing) await db.pharmacyItems.update(existing.id, it);
-      else await db.pharmacyItems.add(it);
+      const ex = await db.pharmacyItems.where('sku').equals(it.sku).first();
+      if (ex) await db.pharmacyItems.update(ex.id,it); else await db.pharmacyItems.add(it);
     }
 
-    // sample purchase invoice (doesn’t auto-change stock; we adjust stock directly for demo)
-    const id = await db.invoices.add({ date: today(), type:'purchase', total: 5000, supplier:'Seeder', bill:'SEED-'+(Date.now()%100000) });
-    for (const it of items){
-      await db.invoiceItems.add({ invoiceId:id, sku: it.sku, name: it.name, qty: 10, price: it.mrp, party:'Seeder' });
+    // seed some purchases + receipts and sales
+    for (let d=-3; d<=0; d++){
+      const invP = await db.invoices.add({ date:today(d), type:'purchase', total:500 + d*20, supplier:'SEED-SUP', bill:'BILL-'+(100+d) });
+      await db.invoiceItems.add({ invoiceId:invP, sku:'SEED-PARA-250', name:'Paracetamol 250mg', qty:10, price:30, party:'SEED-SUP' });
+      // bump stock
+      const it = await db.pharmacyItems.where('sku').equals('SEED-PARA-250').first();
+      if (it) await db.pharmacyItems.update(it.id,{ stock: (it.stock||0) + 10 });
+
+      const invS = await db.invoices.add({ date:today(d), type:'sale', total:120 + d*10, party:null });
+      await db.invoiceItems.add({ invoiceId:invS, sku:'SEED-CET-10', name:'Cetrizine 10mg', qty:2, price:28, party:null });
+      const it2 = await db.pharmacyItems.where('sku').equals('SEED-CET-10').first();
+      if (it2) await db.pharmacyItems.update(it2.id,{ stock: Math.max(0,(it2.stock||0) - 2) });
     }
 
-    // stock set per items seed
-    for (const it of items){
-      const row = await db.pharmacyItems.where('sku').equals(it.sku).first();
-      if (row) await db.pharmacyItems.update(row.id, { stock: it.stock });
+    // Zero-amount journal to show in reports
+    await db.vouchers.add({ date:today(0), type:'journal', amount:0, party:'note', note:'pharmacy demo seed' });
+
+    if (hasCloud){
+      try{
+        for (const it of items){
+          await window.cloud.upsert('pharmacy_items', { sku:it.sku, name:it.name, barcode:it.barcode, mrp:it.mrp, stock:it.stock }, ['sku']);
+        }
+        console.log('[pharm-seed] cloud mirror ok');
+      }catch(e){ console.warn('[pharm-seed] cloud mirror skipped:', e.message); }
     }
 
-    // accounts voucher
-    await db.vouchers.add({ date: today(), type:'receipt', amount: 2500, party:'Cash', note:'Seeder opening balance' });
-
-    alert('Local: Pharmacy items seeded, sample purchase & voucher added, stock set.');
+    console.log('[pharm-seed] done');
+    return true;
   }
 
   async function clearPharmacyData(){
-    if (cloud){
-      await cloud.remove('pharmacy_items', {});
-      await cloud.remove('invoices', {});
-      await cloud.remove('invoice_items', {});
-      await cloud.remove('vouchers', {});
-      alert('Cloud: cleared pharmacy tables.');
-      return;
+    await ensureDB();
+    const seedItems = await db.pharmacyItems.where('sku').startsWith('SEED-').toArray();
+    for (const r of seedItems) await db.pharmacyItems.delete(r.id);
+
+    const inv = await db.invoices.toArray();
+    for (const i of inv){
+      if ((i.supplier||'').includes('SEED') || i.type==='sale' || i.type==='purchase'){
+        await db.invoices.delete(i.id);
+      }
     }
-    if (!window.db){ alert('db.js not loaded'); return; }
-    const db = window.db;
-    await db.pharmacyItems.clear();
-    await db.invoices.clear();
     await db.invoiceItems.clear();
-    await db.vouchers.clear();
-    alert('Local: cleared pharmacy tables.');
+
+    const vAll = await db.vouchers.toArray();
+    for (const v of vAll){ if ((v.note||'').includes('demo seed') || v.party==='note') await db.vouchers.delete(v.id); }
+
+    if (hasCloud){
+      try{ await window.cloud.delete('pharmacy_items', { sku: 'SEED-%' }); }catch{}
+    }
+    return true;
   }
 
   window.seedPharmacyData = seedPharmacyData;
