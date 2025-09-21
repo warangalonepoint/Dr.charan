@@ -8,6 +8,11 @@
   <link rel="icon" href="./public/assets/icon-192.png">
   <link rel="stylesheet" href="./styles/styles.css">
   <meta name="theme-color" content="#17B26A"/>
+  <style>
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .hint{opacity:.8}
+    .btn[disabled]{opacity:.5;cursor:not-allowed}
+  </style>
 </head>
 <body>
   <!-- Banner card -->
@@ -35,44 +40,78 @@
         <button class="btn" id="regSwBtn">Register Service Worker</button>
       </div>
 
-      <!-- Test tools -->
-      <div id="testWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn" id="seedBtn">Seed Test Data</button>
-        <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
-        <span class="small" style="align-self:center;opacity:.8">Seeds DEMO patients, slots, appts, invoices (last 7 days).</span>
+      <!-- Test data seeding (ALWAYS SHOWN) -->
+      <div id="testWrap" style="margin:14px 0">
+        <div class="row">
+          <button class="btn" id="seedBtn"        title="Seed demo patients, appointments, slots, lab & pharmacy KPIs">Seed Test Data</button>
+          <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0"
+                  title="Remove rows created by Seed Test Data (safe)">Clear Test Data</button>
+          <span class="small hint">Seeds P001–P005 locally/cloud with last-7-days spread.</span>
+        </div>
       </div>
 
-      <!-- Pharmacy tools -->
-      <div id="pharmWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
-        <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
-        <span class="small" style="align-self:center;opacity:.8">Populates master items, adjusts stock, logs vouchers.</span>
+      <!-- Pharmacy seeding (ALWAYS SHOWN) -->
+      <div id="pharmWrap" style="margin:14px 0">
+        <div class="row">
+          <button class="btn" id="seedPharmBtn"  title="Seed pharmacy items, stock and a journal voucher">Seed Pharmacy Data</button>
+          <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0"
+                  title="Remove seeded pharmacy items and seed voucher">Clear Pharmacy Data</button>
+          <span class="small hint">Populates master items (SEED-*), adjusts stock, logs vouchers.</span>
+        </div>
       </div>
     </div>
   </div>
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Scripts -->
+  <!-- Dexie first (for local mode) -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
   <script src="./scripts/db.js"></script>
-  <script src="./scripts/cloud.js"></script>
+
+  <!-- Optional cloud adapter (if you use Supabase via UMD client) -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.2/dist/umd/supabase.js"></script> -->
+  <!-- <script src="./scripts/cloud.js"></script> -->
+
+  <!-- Seeder scripts (UMD; attach window.seedTestData / window.seedPharmacyData) -->
   <script src="./scripts/test-seed.js"></script>
   <script src="./scripts/pharmacy-seed.js"></script>
+
+  <!-- Core settings logic -->
   <script src="./scripts/settings.js"></script>
 
-  <!-- Hide seed blocks if scripts missing -->
+  <!-- Always show seed blocks; disable buttons if functions missing -->
   <script>
-    window.addEventListener('DOMContentLoaded', () => {
-      if (typeof window.seedTestData !== 'function') {
-        const demoWrap = document.getElementById('testWrap');
-        if (demoWrap) demoWrap.style.display = 'none';
+    (function(){
+      // Theme + housekeeping (same everywhere)
+      const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
+      html.setAttribute('data-theme',saved);
+      document.getElementById('themeBtn').onclick=()=>{
+        const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+        html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+      };
+      document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+      document.getElementById('clearCacheBtn').onclick=async()=>{
+        if(!confirm('Clear caches+DB?')) return;
+        if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+        if (window.db?.delete) { try{ await window.db.delete(); }catch{} }
+        const keep=localStorage.getItem('theme'); localStorage.clear();
+        if(keep) localStorage.setItem('theme',keep); location.reload();
+      };
+
+      // If seed functions are missing, disable buttons (but keep them visible)
+      function toggle(btnId, hasFn, why){
+        const btn=document.getElementById(btnId);
+        if(!btn) return;
+        if(!hasFn){
+          btn.setAttribute('disabled','');
+          if(why) btn.title = (btn.title?btn.title+' • ':'') + why;
+        }
       }
-      if (typeof window.seedPharmacyData !== 'function') {
-        const pharmWrap = document.getElementById('pharmWrap');
-        if (pharmWrap) pharmWrap.style.display = 'none';
-      }
-    });
+      toggle('seedBtn',       typeof window.seedTestData      === 'function', 'scripts/test-seed.js not loaded');
+      toggle('clearBtn',      typeof window.clearTestData     === 'function', 'scripts/test-seed.js not loaded');
+      toggle('seedPharmBtn',  typeof window.seedPharmacyData  === 'function', 'scripts/pharmacy-seed.js not loaded');
+      toggle('clearPharmBtn', typeof window.clearPharmacyData === 'function', 'scripts/pharmacy-seed.js not loaded');
+    })();
   </script>
 </body>
 </html>
