@@ -1,57 +1,102 @@
-<!-- scripts/settings.js -->
-<script>
-(function(){
-  const html=document.documentElement;
-  html.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');
+// scripts/settings.js
+// Settings page controller (notifications, service worker, seed/clear)
 
-  const E = (id)=>document.getElementById(id);
+// ---------- Theme + housekeeping ----------
+const html = document.documentElement;
+const saved = localStorage.getItem("theme") || "dark";
+html.setAttribute("data-theme", saved);
 
-  // Notifications opt-in
-  E('notifyChk')?.addEventListener('change', async (e)=>{
-    if(!('Notification' in window)) { alert('Notifications not supported'); return; }
-    if(e.target.checked){
-      const p = await Notification.requestPermission();
-      if(p!=='granted'){ e.target.checked=false; }
+document.getElementById("themeBtn")?.addEventListener("click", () => {
+  const n = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  html.setAttribute("data-theme", n);
+  localStorage.setItem("theme", n);
+});
+
+document.getElementById("logoutBtn")?.addEventListener("click", () => {
+  localStorage.removeItem("role");
+  location.href = "./login.html";
+});
+
+document.getElementById("clearCacheBtn")?.addEventListener("click", async () => {
+  if (!confirm("Clear caches + DB?")) return;
+  if ("caches" in window) {
+    const ns = await caches.keys();
+    for (const n of ns) await caches.delete(n);
+  }
+  if (window.db) {
+    await db.delete();
+  }
+  const keep = localStorage.getItem("theme");
+  localStorage.clear();
+  if (keep) localStorage.setItem("theme", keep);
+  location.reload();
+});
+
+// ---------- Notifications toggle ----------
+const notifyChk = document.getElementById("notifyChk");
+if (notifyChk) {
+  notifyChk.checked = Notification.permission === "granted";
+  notifyChk.addEventListener("change", async () => {
+    if (notifyChk.checked) {
+      let perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        alert("Notifications not allowed in browser.");
+        notifyChk.checked = false;
+      }
     }
   });
+}
 
-  // Register SW
-  E('regSwBtn')?.addEventListener('click', async ()=>{
-    if('serviceWorker' in navigator){
-      await navigator.serviceWorker.register('./service-worker.js');
-      alert('Service worker registered');
-    }else{
-      alert('Service worker not supported');
+// ---------- Register Service Worker ----------
+document.getElementById("regSwBtn")?.addEventListener("click", async () => {
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("./service-worker.js");
+      alert("Service worker registered.");
+    } catch (e) {
+      console.error("SW register error", e);
+      alert("SW registration failed");
     }
-  });
+  } else {
+    alert("No service worker support in this browser.");
+  }
+});
 
-  // Seed / Clear test data (cloud-first)
-  E('seedBtn')?.addEventListener('click', async ()=>{
-    try{
-      if(typeof window.seedTestData !== 'function'){ alert('test-seed.js not loaded'); return; }
-      await window.seedTestData();
-      alert('Seeded demo data ✔');
-    }catch(e){ console.error(e); alert('Seed failed: '+e.message); }
-  });
+// ---------- Demo Test Seed ----------
+document.getElementById("seedBtn")?.addEventListener("click", async () => {
+  if (typeof window.seedTestData !== "function") {
+    alert("seedTestData not available");
+    return;
+  }
+  await window.seedTestData();
+  alert("Demo test data seeded.");
+});
 
-  E('clearBtn')?.addEventListener('click', async ()=>{
-    try{
-      if(!confirm('Remove demo data (DEMO-* records)?')) return;
-      if(typeof window.clearTestData !== 'function'){ alert('test-seed.js not loaded'); return; }
-      await window.clearTestData();
-      alert('Cleared demo data ✔');
-    }catch(e){ console.error(e); alert('Clear failed: '+e.message); }
-  });
+document.getElementById("clearBtn")?.addEventListener("click", async () => {
+  if (!confirm("Clear ALL test data?")) return;
+  if (typeof window.clearTestData === "function") {
+    await window.clearTestData();
+    alert("Test data cleared.");
+  } else {
+    alert("clearTestData not available");
+  }
+});
 
-  // Pharmacy seeds (if present)
-  E('seedPharmBtn')?.addEventListener('click', async ()=>{
-    if(typeof window.seedPharmacyData !== 'function'){ alert('pharmacy-seed.js not loaded'); return; }
-    await window.seedPharmacyData(); alert('Pharmacy data seeded ✔');
-  });
-  E('clearPharmBtn')?.addEventListener('click', async ()=>{
-    if(typeof window.clearPharmacyData !== 'function'){ alert('pharmacy-seed.js not loaded'); return; }
-    await window.clearPharmacyData(); alert('Pharmacy data cleared ✔');
-  });
+// ---------- Pharmacy Seed ----------
+document.getElementById("seedPharmBtn")?.addEventListener("click", async () => {
+  if (typeof window.seedPharmacyData !== "function") {
+    alert("Pharmacy seeder missing");
+    return;
+  }
+  await window.seedPharmacyData();
+  alert("Pharmacy data seeded.");
+});
 
-})();
-</script>
+document.getElementById("clearPharmBtn")?.addEventListener("click", async () => {
+  if (typeof window.clearPharmacyData !== "function") {
+    alert("Pharmacy clear missing");
+    return;
+  }
+  await window.clearPharmacyData();
+  alert("Pharmacy data cleared.");
+});
