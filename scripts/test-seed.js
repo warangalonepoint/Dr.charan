@@ -1,134 +1,181 @@
-// scripts/test-seed.js
-// Plain script (no modules). Exposes window.seedTestData / window.clearTestData
-
+<!-- scripts/test-seed.js -->
+<script>
+/**
+ * Test data seeder (cloud-first).
+ * Exposes:
+ *   window.seedTestData()   -> seeds last-7-days demo data
+ *   window.clearTestData()  -> removes demo data
+ *
+ * Requires:
+ *   - cloud.js loaded first (for Supabase)  OR  db.js (for Dexie fallback)
+ *   - your Supabase “demo write” policies enabled while testing
+ *     (insert/update on: patients, slots, appointments, invoices, lab_invoices)
+ */
 (function () {
-  if (!window.Dexie) { console.error("test-seed: Dexie not loaded"); return; }
-  if (!window.db)    { console.error("test-seed: window.db not found. Ensure scripts/db.js sets window.db = db"); return; }
+  const hasCloud = !!(window.cloud && window.cloud.insert && window.cloud.upsert && window.cloud.del);
+  const hasDb = !!(window.db && window.db.tables);
 
-  const REQUIRED = [
-    "patients","appointments","invoices","invoiceItems","labInvoices","patientHistory","staff"
-  ];
-
-  const demoPatients = [
-    { pid: "P001", name: "Test Child 1", phone: "9000000001", parent: "Parent 1" },
-    { pid: "P002", name: "Test Child 2", phone: "9000000002", parent: "Parent 2" },
-    { pid: "P003", name: "Test Child 3", phone: "9000000003", parent: "Parent 3" },
-    { pid: "P004", name: "Test Child 4", phone: "9000000004", parent: "Parent 4" },
-    { pid: "P005", name: "Test Child 5", phone: "9000000005", parent: "Parent 5" }
-  ];
-
+  const log = (...a) => console.log('[seed]', ...a);
   const todayISO = () => new Date().toISOString().slice(0,10);
-  const dayISO = (off=0)=>{ const d=new Date(); d.setDate(d.getDate()-off); return d.toISOString().slice(0,10); };
-  const rint = (a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  const addDaysISO = (baseISO, delta) => {
+    const d = baseISO ? new Date(baseISO) : new Date();
+    d.setDate(d.getDate()+delta);
+    return d.toISOString().slice(0,10);
+  };
+  const pad = n => String(n).padStart(2,'0');
+  const toKey = (date, time24) => `${date}-${time24}`;
 
-  async function ensureReady(){
-    await db.open();
-    const have = db.tables.map(t=>t.name);
-    const missing = REQUIRED.filter(n=>!have.includes(n));
-    if(missing.length){
-      throw new Error("test-seed: Missing stores in db.js — "+missing.join(", "));
-    }
-  }
+  // -------- demo data --------
+  const DEMO_TAG = 'DEMO';                    // used in pid / source / reason to make cleanup easy
+  const demoPatients = [
+    { pid:`${DEMO_TAG}-P001`, phone:'9000000001', name:'Aarav',  parent:'Mr Rao',    dob:'2019-05-15' },
+    { pid:`${DEMO_TAG}-P002`, phone:'9000000002', name:'Ishita', parent:'Mrs Reddy', dob:'2020-02-10' },
+    { pid:`${DEMO_TAG}-P003`, phone:'9000000003', name:'Vihaan', parent:'Mr Kumar',  dob:'2018-11-22' },
+    { pid:`${DEMO_TAG}-P004`, phone:'9000000004', name:'Saanvi', parent:'Mrs Iyer',  dob:'2021-07-01' },
+    { pid:`${DEMO_TAG}-P005`, phone:'9000000005', name:'Advik',  parent:'Mr Singh',  dob:'2017-03-28' }
+  ];
 
-  async function clearTestData(){
-    await ensureReady();
-    for(const p of demoPatients){
-      await db.appointments.where("pid").equals(p.pid).delete();
-      await db.invoiceItems.where("party").equals(p.name).delete();
-      await db.invoices.where("pid").equals(p.pid).delete();
-      await db.labInvoices.where("patientId").equals(p.pid).delete();
-      await db.patientHistory.where("pid").equals(p.pid).delete();
-      await db.patients.where("pid").equals(p.pid).delete();
-    }
-    const seedStaff = await db.staff.where("role").startsWith("Seed ").toArray();
-    for(const s of seedStaff) await db.staff.delete(s.id);
-
-    try{
-      localStorage.setItem("clinic.pulse", JSON.stringify({t:Date.now(),evt:"test-data-cleared"}));
-      localStorage.removeItem("clinic.pulse");
-    }catch{}
-    console.info("test-seed: cleared");
-    return true;
-  }
-
-  async function seedTestData(){
-    await ensureReady();
-    await clearTestData();
-
-    const today = todayISO();
-
-    // Patients
-    for(const p of demoPatients){
-      await db.patients.add({
-        pid:p.pid, phone:p.phone, name:p.name, barcode:p.pid, dob:"2020-01-01",
-        parent:p.parent, heightCm:90+rint(0,20), weightKg:12+rint(0,8),
-        createdAt:Date.now(), updatedAt:Date.now()
+  // build a simple slot window
+  function buildSlotsForDay(date, start='09:00', end='12:00', step=30) {
+    const slots=[];
+    const mins = (hhmm)=>{const [h,m]=hhmm.split(':').map(Number);return h*60+m;};
+    const addm = (hhmm, s)=>{const t=mins(hhmm)+s; const h=Math.floor(t/60), m=t%60; return `${pad(h)}:${pad(m)}`;};
+    for(let t=start, tok=1; mins(t)<mins(end); t=addm(t,step), tok++){
+      slots.push({
+        date, time: t, token: tok,
+        key: toKey(date, t),
+        status: 'free'
       });
     }
+    return slots;
+  }
 
-    // Appointments today (mixed statuses)
-    let token=1;
-    for(const p of demoPatients){
-      const status = ["pending","approved","done","cancelled"][(token-1)%4];
-      await db.appointments.add({
-        date:today, time:`${9+token}:00`, pid:p.pid, name:p.name, phone:p.phone,
-        token, status, source: token%2 ? "walk-in":"online",
-        reason:"General Checkup", approvedAt: status!=="pending"?Date.now():null,
-        doneAt: status==="done"?Date.now():null
-      });
-      token++;
-    }
+  // map a few appointments for “today”
+  function demoAppointmentsFromSlots(slots) {
+    // take first five slots and mark with different statuses
+    const pick = slots.slice(0,5);
+    const statuses = ['pending','approved','approved','done','cancelled'];
+    return pick.map((s, i) => {
+      const p = demoPatients[i % demoPatients.length];
+      return {
+        date: s.date,
+        time: s.time,
+        token: s.token,
+        pid: p.pid,
+        name: p.name,
+        phone: p.phone,
+        status: statuses[i],
+        source: `${DEMO_TAG}-seed`,
+        reason: `${DEMO_TAG}-seed`
+      };
+    });
+  }
 
-    // Pharmacy invoices 7 days
-    let billNo=1;
-    for(let d=6; d>=0; d--){
-      const date = dayISO(d);
-      for(const p of demoPatients){
-        const total = 120 + rint(0,3)*60;
-        const invoiceId = await db.invoices.add({
-          date, type:"sale", total, pid:p.pid, party:p.name, supplier:null,
-          bill:`INV${String(billNo).padStart(4,"0")}`
-        });
-        await db.invoiceItems.add({
-          invoiceId, sku:`MED${String(billNo).padStart(3,"0")}`, name:"Paracetamol Syrup",
-          qty:1, price:total, party:p.name
-        });
-        if(Math.random()<0.15){
-          await db.invoices.add({
-            date, type:"sale-return", total:Math.round(total*0.5),
-            pid:p.pid, party:p.name, supplier:null, bill:`RET${String(billNo).padStart(4,"0")}`
-          });
+  // ---- cloud helpers (wrap cloud.js or Dexie) ----
+  async function upsertMany(table, rows, conflictCols) {
+    if (!rows?.length) return {count:0};
+    if (hasCloud) return window.cloud.upsert(table, rows, conflictCols);
+    if (hasDb) {
+      // very small, simple Dexie fallback
+      if (conflictCols?.length) {
+        for (const r of rows) {
+          // build equals query using first conflict col
+          const col = conflictCols[0];
+          const old = await window.db[table].where(col).equals(r[col]).first();
+          if (old) await window.db[table].update(old.id, r);
+          else await window.db[table].add(r);
         }
-        billNo++;
+        return {count: rows.length};
       }
+      await window.db[table].bulkAdd(rows);
+      return {count: rows.length};
     }
+    throw new Error('No cloud or db available');
+  }
 
-    // Lab invoices today
-    for(const p of demoPatients){
-      await db.labInvoices.add({ date:today, patientId:p.pid, patientName:p.name, amount:300+rint(0,4)*100 });
+  async function insertMany(table, rows) {
+    if (!rows?.length) return {count:0};
+    if (hasCloud) return window.cloud.insert(table, rows);
+    if (hasDb)   { await window.db[table].bulkAdd(rows); return {count:rows.length}; }
+    throw new Error('No cloud or db available');
+  }
+
+  async function deleteBy(table, where) {
+    if (hasCloud) return window.cloud.del(table, where);
+    if (hasDb)   {
+      // very small Dexie filter delete
+      const all = await window.db[table].toArray();
+      const keep = all.filter(r => !where(r));
+      await window.db[table].clear();
+      await window.db[table].bulkAdd(keep);
+      return {count: all.length - keep.length};
     }
+    throw new Error('No cloud or db available');
+  }
 
-    // Patient history
-    for(const p of demoPatients){
-      await db.patientHistory.add({ pid:p.pid, date:today, note:"Auto-seeded consultation note.", author:"Dr. Charan", meta:{source:"auto-test"} });
+  // ---- public API ----
+  async function seedTestData() {
+    const today = todayISO();
+    const from  = addDaysISO(today, -6);
+
+    log('Seeding patients…');
+    await upsertMany('patients', demoPatients.map(p=>({
+      ...p,
+      height_cm: null, weight_kg: null,
+    })), ['pid']);
+
+    log('Seeding slots for last 7 days…');
+    let allSlots = [];
+    for (let i=0;i<7;i++){
+      const d = addDaysISO(from, i);
+      allSlots = allSlots.concat( buildSlotsForDay(d, '09:00','12:00',30).map(s=>({
+        ...s,
+        // also mirror apptStatus for board fallback
+        appt_status: 'pending'
+      })));
     }
+    // upsert on “key” (date-time)
+    await upsertMany('slots', allSlots, ['key']);
 
-    // Seed staff
-    await db.staff.bulkAdd([
-      { name:"Seed Front Office", role:"Seed FrontOffice", phone:"9000090000" },
-      { name:"Seed Supervisor",   role:"Seed Supervisor",  phone:"9000090001" }
-    ]);
+    log('Seeding today’s appointments…');
+    const todaysSlots = allSlots.filter(s=>s.date===today);
+    const apps = demoAppointmentsFromSlots(todaysSlots);
+    await insertMany('appointments', apps);
 
-    try{
-      localStorage.setItem("clinic.pulse", JSON.stringify({t:Date.now(),evt:"test-data-seeded",payload:{n:demoPatients.length}}));
-      localStorage.removeItem("clinic.pulse");
-    }catch{}
+    log('Seeding pharmacy invoice + lab invoice (today)…');
+    await insertMany('invoices', [{
+      date: today, type:'sale', total: 820, party:`${DEMO_TAG}-seed`
+    }]);
+    await insertMany('lab_invoices', [{
+      date: today, patient_id: demoPatients[0].pid, patient_name: demoPatients[0].name, amount: 450
+    }]);
 
-    console.info("test-seed: seeded");
+    log('Done ✅');
     return true;
   }
 
-  // expose globals (required by settings.html buttons)
+  async function clearTestData() {
+    log('Clearing DEMO data…');
+
+    // patients by pid prefix
+    await deleteBy('patients', r => typeof r.pid === 'string' && r.pid.startsWith(`${DEMO_TAG}-`));
+
+    // appointments marked by seed source/reason
+    await deleteBy('appointments', r => (r?.source===`${DEMO_TAG}-seed`) || (r?.reason===`${DEMO_TAG}-seed`));
+
+    // slots whose key/date exist in last 7 days AND have no non-demo booking (best-effort)
+    const today = todayISO(), from = addDaysISO(today, -6);
+    await deleteBy('slots', r => (r?.date>=from && r?.date<=today) && (!r?.pid || String(r.pid).startsWith(`${DEMO_TAG}-`)));
+
+    // demo financials
+    await deleteBy('invoices', r => r?.party === `${DEMO_TAG}-seed`);
+    await deleteBy('lab_invoices', r => r?.patient_id?.startsWith?.(`${DEMO_TAG}-`));
+
+    log('Cleared ✅');
+    return true;
+  }
+
   window.seedTestData  = seedTestData;
   window.clearTestData = clearTestData;
 })();
+</script>
