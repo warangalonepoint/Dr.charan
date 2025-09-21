@@ -8,9 +8,10 @@
   <link rel="icon" href="./public/assets/icon-192.png">
   <link rel="stylesheet" href="./styles/styles.css">
   <meta name="theme-color" content="#17B26A"/>
+  <style>.hidden{display:none}</style>
 </head>
 <body>
-  <!-- Banner -->
+  <!-- Banner card -->
   <div class="hero-card">
     <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
   </div>
@@ -35,49 +36,207 @@
         <button class="btn" id="regSwBtn">Register Service Worker</button>
       </div>
 
-      <!-- Test tools (hidden if script is missing) -->
+      <!-- Test tools (always visible) -->
       <div id="testWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn" id="seedBtn">Seed Test Data</button>
         <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
-        <span class="small" style="align-self:center;opacity:.8">Seeds P001–P005 locally with last-7-days spread.</span>
-      </div>
-
-      <!-- Pharmacy tools (hidden if script is missing) -->
-      <div id="pharmWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
-        <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
-        <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
-        <span class="small" style="align-self:center;opacity:.8">Populates master items, adjusts stock, logs vouchers.</span>
+        <span class="small" style="align-self:center;opacity:.8">
+          Seeds P001–P005 across bookings, pharmacy, lab & history (spread over last 7 days, local to this device).
+        </span>
       </div>
     </div>
   </div>
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Dexie (global) -->
+  <!-- Dexie CDN (must load before inline script) -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 
-  <!-- Optional seeders: expose window.seedTestData / window.clearTestData / window.seedPharmacyData / window.clearPharmacyData -->
-  <script src="./scripts/test-seed.js"></script>
-  <script src="./scripts/pharmacy-seed.js"></script>
-
-  <!-- Page logic (ES module; imports db etc.) -->
-  <script type="module" src="./scripts/settings.js"></script>
-
-  <!-- Notifications helper (non-module) -->
-  <script src="./scripts/notifications.js"></script>
-
-  <!-- Hide seed blocks if scripts missing -->
+  <!-- Inline, non-module logic: robust on any local server -->
   <script>
-    window.addEventListener('DOMContentLoaded', () => {
-      if (typeof window.seedTestData !== 'function') {
-        const el = document.getElementById('testWrap');
-        if (el) el.style.display = 'none';
+    /* ===== Theme / Topbar ===== */
+    (function(){
+      const html=document.documentElement;
+      const saved=localStorage.getItem('theme')||'dark';
+      html.setAttribute('data-theme',saved);
+      themeBtn.onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark'; html.setAttribute('data-theme',n); localStorage.setItem('theme',n);};
+      logoutBtn.onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+      clearCacheBtn.onclick=async()=>{
+        if(!confirm('Clear caches + DB?')) return;
+        if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+        try{ const tmp=new Dexie('dr_charan_clinic'); await tmp.delete(); }catch(e){}
+        const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+        location.reload();
+      };
+    })();
+
+    /* ===== Notifications ===== */
+    (function(){
+      const chk=document.getElementById('notifyChk');
+      chk.checked=(typeof Notification!=='undefined' && Notification.permission==='granted');
+      chk.onchange=async()=>{
+        if(chk.checked && 'Notification' in window){
+          await Notification.requestPermission();
+          chk.checked=(Notification.permission==='granted');
+        }
+      };
+    })();
+
+    /* ===== Service worker ===== */
+    regSwBtn.onclick=async()=>{
+      if(!('serviceWorker' in navigator)){ alert('Service Worker not supported'); return; }
+      const reg=await navigator.serviceWorker.register('./public/service-worker.js');
+      alert('Service worker registered: '+reg.scope);
+    };
+
+    /* ===== Dexie handle (same schema) ===== */
+    function openClinicDB(){
+      const db=new Dexie('dr_charan_clinic');
+      db.version(4).stores({
+        clinic:'id', pins:'role',
+        patients:'++id, pid, phone, name, barcode, dob, parent, heightCm, weightKg, createdAt, updatedAt',
+        appointments:'++id, date, time, pid, name, phone, token, status, source, reason, approvedAt, doneAt',
+        slots:'++id, date, time, key, status, pid, name, phone, source, token, apptStatus',
+        pharmacyItems:'++id, sku, barcode, name, stock, mrp',
+        invoices:'++id, date, type, total, pid, party, supplier, bill',
+        invoiceItems:'++id, invoiceId, sku, name, qty, price, party',
+        vouchers:'++id, date, type, amount, party, note',
+        labInvoices:'++id, date, patientId, patientName, amount',
+        labStock:'++id, name, qty',
+        labTests:'++id, code, name, price, barcode',
+        patientHistory:'++id, pid, date, note, author, meta',
+        staff:'++id, name, role, phone',
+        attendance:'++id, date, staffId, inAt, outAt'
+      });
+      return db;
+    }
+
+    /* ===== Helpers for 7-day spread seeding ===== */
+    const demoPatients=[
+      { pid:'P001', name:'Test Child 1', phone:'9000000001', parent:'Parent 1' },
+      { pid:'P002', name:'Test Child 2', phone:'9000000002', parent:'Parent 2' },
+      { pid:'P003', name:'Test Child 3', phone:'9000000003', parent:'Parent 3' },
+      { pid:'P004', name:'Test Child 4', phone:'9000000004', parent:'Parent 4' },
+      { pid:'P005', name:'Test Child 5', phone:'9000000005', parent:'Parent 5' }
+    ];
+    const dayISO=(off=0)=>{ const d=new Date(); d.setDate(d.getDate()-off); return d.toISOString().slice(0,10); };
+    const randFrom=a=>a[Math.floor(Math.random()*a.length)];
+    const randInt=(min,max)=>Math.floor(Math.random()*(max-min+1))+min;
+
+    async function clearTestDataPlain(db){
+      for(const p of demoPatients){
+        await db.patients.where('pid').equals(p.pid).delete();
+        await db.appointments.where('pid').equals(p.pid).delete();
+        await db.invoices.where('pid').equals(p.pid).delete();
+        await db.invoiceItems.where('party').equals(p.name).delete();
+        await db.labInvoices.where('patientId').equals(p.pid).delete();
+        await db.patientHistory.where('pid').equals(p.pid).delete();
       }
-      if (typeof window.seedPharmacyData !== 'function') {
-        const el = document.getElementById('pharmWrap');
-        if (el) el.style.display = 'none';
+    }
+
+    // 🌈 Seed across last 7 days with varied statuses/totals
+    async function seedTestDataPlain(){
+      const db=openClinicDB();
+      await clearTestDataPlain(db);
+
+      // Ensure clinic meta & a few lab tests exist (idempotent)
+      await db.clinic.put({ id:'meta', name:'Dr. Charan Child Clinic', address:'—', phone:'—' });
+      if(await db.labTests.count()===0){
+        await db.labTests.bulkAdd([
+          { code:'CBC', name:'Complete Blood Count', price:350, barcode:null },
+          { code:'CRP', name:'C-Reactive Protein', price:600, barcode:null },
+          { code:'TSH', name:'Thyroid Stimulating Hormone', price:500, barcode:null }
+        ]);
       }
-    });
+
+      const statuses=['pending','approved','done'];
+      let tokenCounter=1, billCounter=1;
+
+      for(let i=0;i<demoPatients.length;i++){
+        const p=demoPatients[i];
+
+        await db.patients.add({
+          pid:p.pid, phone:p.phone, name:p.name, dob:'2020-01-01', parent:p.parent,
+          heightCm:90+randInt(0,20), weightKg:12+randInt(0,8),
+          createdAt:Date.now(), updatedAt:Date.now()
+        });
+
+        // 2–3 appointments across last 7 days
+        const apptCount=randInt(2,3);
+        for(let k=0;k<apptCount;k++){
+          const off=(i+k)%7, d=dayISO(off), status=randFrom(statuses);
+          await db.appointments.add({
+            date:d, time:`${9+((tokenCounter-1)%8)}:${randFrom(['00','15','30','45'])}`,
+            pid:p.pid, name:p.name, phone:p.phone, token:tokenCounter++,
+            status, source:randFrom(['walk-in','online','WhatsApp']),
+            reason:randFrom(['General Checkup','Follow-up','Vaccination']),
+            approvedAt:(status!=='pending')?Date.now():null,
+            doneAt:(status==='done')?Date.now():null
+          });
+        }
+
+        // 1–2 pharmacy invoices on different days
+        const invCount=randInt(1,2);
+        for(let m=0;m<invCount;m++){
+          const d=dayISO((i+m+1)%7), total=randInt(100,600);
+          const invoiceId=await db.invoices.add({
+            date:d, type:'sale', total, pid:p.pid, party:p.name, supplier:null,
+            bill:`INV${String(billCounter).padStart(3,'0')}`
+          });
+          await db.invoiceItems.add({
+            invoiceId, sku:`MED${String(billCounter).padStart(3,'0')}`,
+            name:randFrom(['Paracetamol Syrup','ORS','Cough Syrup','Zinc Drops']),
+            qty:1, price:total, party:p.name
+          });
+          billCounter++;
+        }
+
+        // ~60% get a lab order on a different day
+        if(Math.random()<0.6){
+          const d=dayISO((i+2)%7);
+          await db.labInvoices.add({ date:d, patientId:p.pid, patientName:p.name, amount:randInt(300,900) });
+        }
+
+        // One history note (today/yesterday stagger)
+        await db.patientHistory.add({
+          pid:p.pid, date:dayISO(i%2),
+          note:'Auto-seeded consultation note.', author:'Dr. Charan', meta:{source:'auto-test'}
+        });
+      }
+
+      // Pulse to refresh dashboards/charts
+      try{
+        const msg={t:Date.now(), evt:'test-data-seeded', payload:{count:demoPatients.length}};
+        localStorage.setItem('clinic.pulse', JSON.stringify(msg));
+        localStorage.removeItem('clinic.pulse');
+      }catch{}
+    }
+
+    /* ===== Wire buttons with feedback ===== */
+    (function(){
+      const seedBtn=document.getElementById('seedBtn');
+      const clearBtn=document.getElementById('clearBtn');
+
+      seedBtn.addEventListener('click', async()=>{
+        seedBtn.disabled=true; seedBtn.textContent='Seeding…';
+        try{ await seedTestDataPlain(); alert('Seeded 7-day demo data for P001–P005.'); }
+        catch(err){ console.error(err); alert('Seeding failed: '+(err?.message||err)); }
+        finally{ seedBtn.disabled=false; seedBtn.textContent='Seed Test Data'; }
+      });
+
+      clearBtn.addEventListener('click', async()=>{
+        clearBtn.disabled=true; clearBtn.textContent='Clearing…';
+        try{
+          const db=openClinicDB(); await clearTestDataPlain(db);
+          // pulse clear
+          try{ const msg={t:Date.now(), evt:'test-data-cleared', payload:{}};
+               localStorage.setItem('clinic.pulse', JSON.stringify(msg));
+               localStorage.removeItem('clinic.pulse'); }catch{}
+          alert('Cleared demo data for P001–P005.');
+        }catch(err){ console.error(err); alert('Clear failed: '+(err?.message||err)); }
+        finally{ clearBtn.disabled=false; clearBtn.textContent='Clear Test Data'; }
+      });
+    })();
   </script>
 </body>
 </html>
