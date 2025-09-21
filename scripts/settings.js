@@ -1,102 +1,83 @@
-// scripts/settings.js
-// Settings page controller (notifications, service worker, seed/clear)
+// settings.js
+import db from './db.js';
 
-// ---------- Theme + housekeeping ----------
+// Theme toggle
 const html = document.documentElement;
-const saved = localStorage.getItem("theme") || "dark";
-html.setAttribute("data-theme", saved);
+html.setAttribute('data-theme', localStorage.getItem('theme') || 'dark');
+document.getElementById('themeBtn').onclick = () => {
+  const n = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  html.setAttribute('data-theme', n);
+  localStorage.setItem('theme', n);
+};
 
-document.getElementById("themeBtn")?.addEventListener("click", () => {
-  const n = html.getAttribute("data-theme") === "dark" ? "light" : "dark";
-  html.setAttribute("data-theme", n);
-  localStorage.setItem("theme", n);
-});
+// Logout
+document.getElementById('logoutBtn').onclick = () => {
+  localStorage.removeItem('role');
+  location.href = './login.html';
+};
 
-document.getElementById("logoutBtn")?.addEventListener("click", () => {
-  localStorage.removeItem("role");
-  location.href = "./login.html";
-});
-
-document.getElementById("clearCacheBtn")?.addEventListener("click", async () => {
-  if (!confirm("Clear caches + DB?")) return;
-  if ("caches" in window) {
-    const ns = await caches.keys();
-    for (const n of ns) await caches.delete(n);
+// Clear cache + db
+document.getElementById('clearCacheBtn').onclick = async () => {
+  if (!confirm('Clear caches + DB?')) return;
+  if ('caches' in window) {
+    const names = await caches.keys();
+    for (const n of names) await caches.delete(n);
   }
-  if (window.db) {
-    await db.delete();
-  }
-  const keep = localStorage.getItem("theme");
+  await db.delete();
+  const keep = localStorage.getItem('theme');
   localStorage.clear();
-  if (keep) localStorage.setItem("theme", keep);
+  if (keep) localStorage.setItem('theme', keep);
   location.reload();
-});
+};
 
-// ---------- Notifications toggle ----------
-const notifyChk = document.getElementById("notifyChk");
-if (notifyChk) {
-  notifyChk.checked = Notification.permission === "granted";
-  notifyChk.addEventListener("change", async () => {
-    if (notifyChk.checked) {
-      let perm = await Notification.requestPermission();
-      if (perm !== "granted") {
-        alert("Notifications not allowed in browser.");
-        notifyChk.checked = false;
-      }
-    }
-  });
-}
-
-// ---------- Register Service Worker ----------
-document.getElementById("regSwBtn")?.addEventListener("click", async () => {
-  if ("serviceWorker" in navigator) {
+// Register service worker
+document.getElementById('regSwBtn').onclick = async () => {
+  if ('serviceWorker' in navigator) {
     try {
-      await navigator.serviceWorker.register("./service-worker.js");
-      alert("Service worker registered.");
-    } catch (e) {
-      console.error("SW register error", e);
-      alert("SW registration failed");
+      await navigator.serviceWorker.register('./service-worker.js');
+      alert('Service Worker registered.');
+    } catch (err) {
+      console.error('SW register failed', err);
     }
   } else {
-    alert("No service worker support in this browser.");
+    alert('Service Workers not supported.');
   }
-});
+};
 
-// ---------- Demo Test Seed ----------
-document.getElementById("seedBtn")?.addEventListener("click", async () => {
-  if (typeof window.seedTestData !== "function") {
-    alert("seedTestData not available");
-    return;
-  }
-  await window.seedTestData();
-  alert("Demo test data seeded.");
-});
+// --- Seeder buttons ---
+window.addEventListener('DOMContentLoaded', () => {
+  const seedBtn = document.getElementById('seedBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const seedPharmBtn = document.getElementById('seedPharmBtn');
+  const clearPharmBtn = document.getElementById('clearPharmBtn');
 
-document.getElementById("clearBtn")?.addEventListener("click", async () => {
-  if (!confirm("Clear ALL test data?")) return;
-  if (typeof window.clearTestData === "function") {
-    await window.clearTestData();
-    alert("Test data cleared.");
+  if (typeof window.seedTestData === 'function') {
+    seedBtn.onclick = async () => {
+      console.log('[Seed] Starting test data seed...');
+      await window.seedTestData();
+      alert('Test data seeded!');
+    };
+    clearBtn.onclick = async () => {
+      console.log('[Seed] Clearing test data...');
+      await window.clearTestData();
+      alert('Test data cleared!');
+    };
   } else {
-    alert("clearTestData not available");
+    document.getElementById('testWrap').style.display = 'none';
   }
-});
 
-// ---------- Pharmacy Seed ----------
-document.getElementById("seedPharmBtn")?.addEventListener("click", async () => {
-  if (typeof window.seedPharmacyData !== "function") {
-    alert("Pharmacy seeder missing");
-    return;
+  if (typeof window.seedPharmacyData === 'function') {
+    seedPharmBtn.onclick = async () => {
+      console.log('[Seed] Starting pharmacy data seed...');
+      await window.seedPharmacyData();
+      alert('Pharmacy data seeded!');
+    };
+    clearPharmBtn.onclick = async () => {
+      console.log('[Seed] Clearing pharmacy data...');
+      await window.clearPharmacyData();
+      alert('Pharmacy data cleared!');
+    };
+  } else {
+    document.getElementById('pharmWrap').style.display = 'none';
   }
-  await window.seedPharmacyData();
-  alert("Pharmacy data seeded.");
-});
-
-document.getElementById("clearPharmBtn")?.addEventListener("click", async () => {
-  if (typeof window.clearPharmacyData !== "function") {
-    alert("Pharmacy clear missing");
-    return;
-  }
-  await window.clearPharmacyData();
-  alert("Pharmacy data cleared.");
 });
