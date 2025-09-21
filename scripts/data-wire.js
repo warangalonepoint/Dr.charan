@@ -1,124 +1,88 @@
-// scripts/data-wire.js
-// Lightweight cross-tab/app event bus with optional Supabase Realtime fan-out.
-// Used by pages via:  import { emitClinicChange, onClinicChange, isCloud, setCloudMode } from './scripts/data-wire.js';
-
-const BUS_NAME = 'clinic-bus';
-const STORAGE_KEY = '__clinic_bus_ping__';
-
-// --- Cloud mode flag ---------------------------------------------------------
+<!-- /scripts/data-wire.js -->
+<script type="module">
 /**
- * Cloud mode turns on optional Supabase realtime broadcasting.
- * - If you load scripts/cloud.js (which sets window.supabase), we'll use it.
- * - Toggle persistently via localStorage so all tabs follow the same mode.
+ * Local-only data wire:
+ * - No Supabase here.
+ * - Cross-tab event bus (BroadcastChannel + storage fallback).
+ * - Small helpers to wait for Dexie to be ready.
  */
-const CLOUD_FLAG_KEY = '__clinic_cloud_enabled__';
-const initialCloud =
-  typeof window !== 'undefined' &&
-  (window.CLOUD_ENABLED === true ||
-   localStorage.getItem(CLOUD_FLAG_KEY) === '1');
 
-let CLOUD_ENABLED = !!initialCloud;
+const BC_NAME = 'clinic-bus-v1';
 
-export function isCloud() { return CLOUD_ENABLED; }
-export function setCloudMode(on) {
-  CLOUD_ENABLED = !!on;
-  try {
-    localStorage.setItem(CLOUD_FLAG_KEY, CLOUD_ENABLED ? '1' : '0');
-  } catch {}
-  // Notify listeners that the mode flipped
-  emitClinicChange('cloud:mode', { enabled: CLOUD_ENABLED });
-}
-
-// --- Local tab-to-tab transport ---------------------------------------------
+// ---------- Event bus (cross-tab) ----------
 let bc = null;
-try { bc = new BroadcastChannel(BUS_NAME); } catch {}
+try { bc = new BroadcastChannel(BC_NAME); } catch { bc = null; }
 
 const listeners = new Set();
-function deliver(msg) {
-  if (!msg || typeof msg !== 'object') return;
-  for (const fn of listeners) {
-    try { fn(msg); } catch (e) { /* no-op */ }
+
+export function emitClinicChange(evt, payload = {}) {
+  const msg = { evt, payload, ts: Date.now() };
+  // notify this tab
+  for (const fn of [...listeners]) {
+    try { fn(msg); } catch {}
+  }
+  // broadcast to other tabs
+  if (bc) {
+    try { bc.postMessage(msg); } catch {}
+  } else {
+    // storage-event fallback
+    try { localStorage.setItem('__clinic_bus__', JSON.stringify(msg)); } catch {}
+    // clean quickly
+    try { localStorage.removeItem('__clinic_bus__'); } catch {}
   }
 }
 
-// BroadcastChannel
-if (bc) {
-  bc.onmessage = (e) => deliver(e.data);
+export function onClinicChange(fn) {
+  if (typeof fn === 'function') listeners.add(fn);
+  return () => listeners.delete(fn); // unsubscribe
 }
 
-// storage-event fallback (works across tabs even without BroadcastChannel)
+// BroadcastChannel listener
+if (bc) {
+  bc.onmessage = (e) => {
+    const msg = e?.data;
+    for (const fn of [...listeners]) {
+      try { fn(msg); } catch {}
+    }
+  };
+}
+
+// storage event fallback
 window.addEventListener('storage', (e) => {
-  if (e.key !== STORAGE_KEY || !e.newValue) return;
-  try { deliver(JSON.parse(e.newValue)); } catch {}
+  if (e.key !== '__clinic_bus__' || !e.newValue) return;
+  let msg = null;
+  try { msg = JSON.parse(e.newValue); } catch {}
+  if (!msg) return;
+  for (const fn of [...listeners]) {
+    try { fn(msg); } catch {}
+  }
 });
 
-// --- Optional Supabase realtime transport -----------------------------------
+// ---------- Dexie readiness ----------
 /**
- * If cloud mode is on AND window.supabase exists, we also mirror events
- * through a realtime broadcast channel so other devices get the pulse.
+ * waitForDBReady()
+ * Resolves when window.db exists and Dexie has opened.
+ * Pages can `await waitForDBReady()` before running queries.
  */
-let supaChannel = null;
-async function ensureSupaChannel() {
-  if (!CLOUD_ENABLED) return null;
-  if (!window.supabase) return null;
-  if (supaChannel) return supaChannel;
-
-  // Create a typed broadcast channel
-  supaChannel = window.supabase.channel(BUS_NAME, {
-    config: { broadcast: { ack: true } }
-  });
-
-  supaChannel.on('broadcast', { event: 'pulse' }, (payload) => {
-    // Payload should already be our bus message
-    deliver(payload?.payload || payload);
-  });
-
-  await supaChannel.subscribe().catch(() => {});
-  return supaChannel;
+export async function waitForDBReady(timeoutMs = 10000) {
+  const start = Date.now();
+  while (true) {
+    if (window.db && typeof window.db.open === 'function') {
+      try {
+        // If already open this is cheap; if not, it opens.
+        await window.db.open();
+        return true;
+      } catch (e) {
+        // keep trying until timeout
+      }
+    }
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise(r => setTimeout(r, 120));
+  }
 }
 
-// --- Public API --------------------------------------------------------------
-/**
- * Send a message to all listeners in this tab, other tabs, and (optionally) other devices.
- * @param {string|object} evt - event name OR a full {evt, payload} object
- * @param {any} [payload]
- */
-export async function emitClinicChange(evt, payload) {
-  const msg = (typeof evt === 'object' && evt?.evt)
-    ? evt
-    : { evt, payload };
-  msg.ts = Date.now();
+// Convenience: small date helper used by some pages
+export const todayISO = () => new Date().toISOString().slice(0, 10);
 
-  // 1) local listeners in this tab
-  deliver(msg);
-
-  // 2) other tabs via BroadcastChannel
-  try { bc?.postMessage(msg); } catch {}
-
-  // 3) other tabs via storage-event fallback
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(msg)); } catch {}
-
-  // 4) optional Supabase broadcast (other devices)
-  try {
-    const ch = await ensureSupaChannel();
-    if (ch) await ch.send({ type: 'broadcast', event: 'pulse', payload: msg });
-  } catch {}
-}
-
-/**
- * Listen for messages. Returns an unsubscribe function.
- * @param {(msg:{evt:string,payload:any,ts:number})=>void} handler
- */
-export function onClinicChange(handler) {
-  if (typeof handler !== 'function') return () => {};
-  listeners.add(handler);
-  return () => listeners.delete(handler);
-}
-
-// Expose a simple debug helper in dev tools if needed.
-if (typeof window !== 'undefined') {
-  window.__clinicBus__ = { emitClinicChange, onClinicChange, isCloud, setCloudMode };
-}
-
-// Fire an initial mode pulse so dashboards can reflect cloud/local instantly.
-emitClinicChange('cloud:mode', { enabled: CLOUD_ENABLED });
+export default { emitClinicChange, onClinicChange, waitForDBReady, todayISO };
+</script>
