@@ -14,10 +14,8 @@
   </style>
 </head>
 <body>
-  <!-- Banner card -->
-  <div class="hero-card">
-    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
-  </div>
+  <!-- Banner -->
+  <div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
 
   <!-- Topbar -->
   <div class="topbar">
@@ -31,33 +29,30 @@
       <h2 style="margin:0 0 6px">Settings</h2>
       <p class="small" style="margin:0 0 10px">Configure clinic app preferences</p>
 
-      <!-- Notifications -->
       <div style="margin:14px 0">
         <label><input type="checkbox" id="notifyChk"> Allow Notifications</label>
       </div>
 
-      <!-- Service worker -->
       <div style="margin:14px 0">
         <button class="btn" id="regSwBtn">Register Service Worker</button>
       </div>
 
-      <!-- Test-data seeding (local first, optional cloud mirror) -->
-      <div id="testWrap" style="margin:14px 0">
+      <!-- Built-in, no external seed files -->
+      <div style="margin:14px 0">
         <h3 style="margin:0 0 6px">Seed Test Data</h3>
         <div class="row">
           <button class="btn" id="seedBtn">Seed Test Data</button>
-          <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0" title="Remove rows created by Seed Test Data (safe)">Clear Test Data</button>
-          <span class="small hint">Seeds P001–P005 locally/cloud with last-7-days spread.</span>
+          <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
+          <span class="small hint">Creates P001–P005, 7-day bookings/slots, basic lab.</span>
         </div>
       </div>
 
-      <!-- Pharmacy demo seeding -->
-      <div id="pharmWrap" style="margin:14px 0">
+      <div style="margin:14px 0">
         <h3 style="margin:0 0 6px">Seed Pharmacy Data</h3>
         <div class="row">
           <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
-          <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0" title="Remove demo pharmacy data">Clear Pharmacy Data</button>
-          <span class="small hint">Populates master items (SEED-*), adjusts stock, adds demo bills & vouchers.</span>
+          <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
+          <span class="small hint">Adds SEED-* items, stock, sample invoices & vouchers.</span>
         </div>
       </div>
     </div>
@@ -65,46 +60,14 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Load order matters! Dexie -> db -> seeders -> settings -->
+  <!-- Dexie + DB -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
   <script src="./scripts/db.js"></script>
 
-  <!-- Local + optional cloud seeding helpers -->
-  <script src="./scripts/test-seed.js"></script>
-  <script src="./scripts/pharmacy-seed.js"></script>
-
-  <!-- Core settings logic (wires buttons) -->
+  <!-- Settings logic (includes seeding) -->
   <script src="./scripts/settings.js"></script>
 
-  <!-- Optional: notifications helper (used by Allow Notifications) -->
+  <!-- Optional notifications helper -->
   <script src="./scripts/notifications.js"></script>
-
-  <!-- Hide seed blocks only if scripts are missing -->
-  <script>
-    window.addEventListener('DOMContentLoaded', () => {
-      if (typeof window.seedTestData !== 'function' || typeof window.clearTestData !== 'function') {
-        const el = document.getElementById('testWrap'); if (el) el.style.display = 'none';
-      }
-      if (typeof window.seedPharmacyData !== 'function' || typeof window.clearPharmacyData !== 'function') {
-        const el = document.getElementById('pharmWrap'); if (el) el.style.display = 'none';
-      }
-
-      // Shell actions (theme, logout, clear cache)
-      const html=document.documentElement;
-      html.setAttribute('data-theme',localStorage.getItem('theme')||'dark');
-      document.getElementById('themeBtn').onclick=()=>{
-        const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
-        html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
-      };
-      document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-      document.getElementById('clearCacheBtn').onclick=async()=>{
-        if(!confirm('Clear caches+DB?')) return;
-        if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
-        if (window.db && typeof window.db.delete==='function'){ try{ await window.db.delete(); }catch{} }
-        const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
-        location.reload();
-      };
-    });
-  </script>
 </body>
 </html>
