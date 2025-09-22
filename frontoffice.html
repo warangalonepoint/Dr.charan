@@ -8,10 +8,6 @@
   <link rel="icon" href="./public/assets/icon-192.png">
   <link rel="stylesheet" href="./styles/styles.css">
   <meta name="theme-color" content="#17B26A"/>
-  <style>
-    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px }
-    .knum { font-size:2rem; font-weight:800; line-height:1.1 }
-  </style>
 </head>
 <body>
   <!-- Banner CARD -->
@@ -55,73 +51,36 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Vendor -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
-
-  <!-- App bus -->
   <script src="./scripts/data-wire.js"></script>
-
-  <!-- Page logic -->
   <script type="module">
     import db from './scripts/db.js';
     import { onClinicChange } from './scripts/data-wire.js';
 
-    // ----- Role guard (frontoffice primary; doctor/supervisor allowed) -----
-    const role = localStorage.getItem('role');
+    // Role guard (frontoffice primary; doctor/supervisor allowed)
+    const role=localStorage.getItem('role');
     if(!role){ location.href='./login.html'; }
-    if(!(role==='frontoffice' || role==='doctor' || role==='supervisor')){
-      alert('Front office only'); location.href='./login.html';
-    }
+    if(!(role==='frontoffice' || role==='doctor' || role==='supervisor')){ alert('Front office only'); location.href='./login.html'; }
 
-    // ----- Theme / housekeeping -----
-    const html=document.documentElement;
-    const saved=localStorage.getItem('theme')||'dark';
+    // Theme / housekeeping
+    const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
     html.setAttribute('data-theme',saved);
+    themeBtn.onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n)};
+    clearCacheBtn.onclick=async()=>{ if(!confirm('Clear caches + DB?')) return; if('caches'in window){const ns=await caches.keys(); for(const n of ns) await caches.delete(n);} localStorage.clear(); location.reload(); };
+    logoutBtn.onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
 
-    document.getElementById('themeBtn').onclick=()=>{
-      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
-      html.setAttribute('data-theme',n);
-      localStorage.setItem('theme',n);
-    };
-    document.getElementById('clearCacheBtn').onclick=async()=>{
-      if(!confirm('Clear caches + DB?')) return;
-      if('caches' in window){
-        const names=await caches.keys();
-        for(const n of names) await caches.delete(n);
-      }
-      await db.delete();
-      const keep=localStorage.getItem('theme');
-      localStorage.clear();
-      if(keep) localStorage.setItem('theme',keep);
-      location.reload();
-    };
-    document.getElementById('logoutBtn').onclick=()=>{
-      localStorage.removeItem('role'); location.href='./login.html';
-    };
-
-    // ----- Helpers -----
     const E=id=>document.getElementById(id);
-    const todayISO=()=> new Date().toISOString().slice(0,10);
-    E('todayStr').textContent=todayISO();
+    const today=()=>new Date().toISOString().slice(0,10);
+    E('todayStr').textContent=today();
 
-    // ----- KPIs -----
     async function refresh(){
-      const d=todayISO();
+      const d=today();
       const appts = await db.appointments.where('date').equals(d).toArray();
       E('kBookings').textContent = appts.length;
       E('kApproved').textContent = appts.filter(a=>a.status==='approved').length;
     }
-
-    // Initial + live refresh
     await refresh();
     onClinicChange(()=>refresh());
-
-    // Refresh on tab visibility
-    document.addEventListener('visibilitychange',()=>{
-      if(!document.hidden) refresh();
-    });
-
-    // Safety: periodic refresh
     setInterval(refresh, 30000);
   </script>
 </body>

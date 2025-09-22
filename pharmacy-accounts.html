@@ -1,242 +1,40 @@
-<!doctype html>
-<html lang="en" data-theme="dark">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Pharmacy Accounts — Dr. Charan Child Clinic</title>
-  <link rel="manifest" href="./public/manifest.webmanifest">
-  <link rel="icon" href="./public/assets/icon-192.png">
-  <link rel="stylesheet" href="./styles/styles.css">
-  <meta name="theme-color" content="#17B26A"/>
-  <style>
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-    @media (max-width:980px){.grid{grid-template-columns:1fr}}
-    .tbl{width:100%;border-collapse:collapse}
-    .tbl th,.tbl td{padding:.5rem;border-bottom:1px solid var(--ring)}
-    .controls{display:flex;gap:8px;flex-wrap:wrap;margin:.5rem 0 1rem}
-    tfoot td{font-weight:700;border-top:2px solid var(--ring)}
-    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
-    @media print { .topbar,.controls,footer,.form-card{display:none} .page-card{box-shadow:none} }
-  </style>
-</head>
-<body>
-  <!-- Banner -->
-  <div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
+<!doctype html><html lang="en" data-theme="dark"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pharmacy Accounts — Dr. Charan Child Clinic</title>
+<link rel="manifest" href="./public/manifest.webmanifest"><link rel="icon" href="./public/assets/icon-192.png">
+<link rel="stylesheet" href="./styles/styles.css"><meta name="theme-color" content="#17B26A"/>
+<style>
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:980px){.grid{grid-template-columns:1fr}}
+  .tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{padding:.5rem;border-bottom:1px solid var(--ring)}
+</style></head><body>
+<div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
+<div class="topbar"><button class="btn" id="themeBtn">Theme</button><button class="btn" id="clearCacheBtn">Clear Cache</button><button class="btn" id="logoutBtn">Logout</button></div>
 
-  <!-- Topbar -->
-  <div class="topbar">
-    <button class="btn" id="themeBtn">Theme</button>
-    <button class="btn" id="clearCacheBtn">Clear Cache</button>
-    <button class="btn" id="logoutBtn">Logout</button>
-  </div>
-
-  <div class="app">
+<div class="app"><div class="page-card">
+  <h2>Pharmacy — Accounts</h2>
+  <div class="grid">
     <div class="page-card">
-      <h2 style="margin:0 0 6px">Pharmacy — Accounts</h2>
-
-      <div class="grid">
-        <!-- New voucher -->
-        <div class="page-card form-card" style="padding:12px">
-          <h3 style="margin:0 0 8px">New Voucher</h3>
-          <div class="grid" style="grid-template-columns:1fr 1fr">
-            <div>
-              <label class="small">Type</label>
-              <select id="type" class="in sel">
-                <option value="receipt">receipt</option>
-                <option value="payment">payment</option>
-              </select>
-            </div>
-            <div>
-              <label class="small">Amount</label>
-              <input id="amount" type="number" step=".01" class="in mono" placeholder="Amount">
-            </div>
-            <div>
-              <label class="small">Party</label>
-              <input id="party" class="in" placeholder="Party / PID (optional)">
-            </div>
-            <div>
-              <label class="small">Date</label>
-              <input id="vdate" type="date" class="in mono">
-            </div>
-          </div>
-          <div style="margin-top:8px">
-            <label class="small">Note</label>
-            <textarea id="note" class="in" rows="2" placeholder="Note (eg. invoice linkage, mode/ref)"></textarea>
-          </div>
-          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-            <button class="btn" id="clearFormBtn">Clear</button>
-            <button class="btn primary" id="saveBtn">Save</button>
-          </div>
-          <div id="msg" class="small" style="opacity:.8;margin-top:6px"></div>
-        </div>
-
-        <!-- List & filters -->
-        <div class="page-card" style="padding:12px">
-          <h3 style="margin:0 0 8px">Vouchers</h3>
-
-          <div class="controls">
-            <input id="from" type="date" class="in mono">
-            <input id="to" type="date" class="in mono">
-            <select id="fType" class="in sel">
-              <option value="">All</option>
-              <option value="receipt">receipt</option>
-              <option value="payment">payment</option>
-            </select>
-            <input id="q" class="in" placeholder="Search party/note">
-            <button class="btn" id="filterBtn">Filter</button>
-            <button class="btn" id="csvBtn">Export CSV</button>
-            <button class="btn" id="printBtn">Print</button>
-          </div>
-
-          <table class="tbl">
-            <thead>
-              <tr><th>Date</th><th>Type</th><th>Party</th><th>Amount</th><th>Note</th><th style="width:70px">Actions</th></tr>
-            </thead>
-            <tbody id="rows"></tbody>
-            <tfoot>
-              <tr><td colspan="3">Total Receipts</td><td id="tRec" class="mono">₹0.00</td><td colspan="2"></td></tr>
-              <tr><td colspan="3">Total Payments</td><td id="tPay" class="mono">₹0.00</td><td colspan="2"></td></tr>
-              <tr><td colspan="3">Net (Receipts - Payments)</td><td id="tNet" class="mono">₹0.00</td><td colspan="2"></td></tr>
-            </tfoot>
-          </table>
-        </div>
-      </div>
+      <h3 style="margin:0">New Voucher</h3>
+      <select id="type" class="in sel"><option>receipt</option><option>payment</option></select>
+      <input id="amount" type="number" step=".01" class="in mono" placeholder="Amount">
+      <input id="party" class="in" placeholder="Party">
+      <textarea id="note" class="in" rows="2" placeholder="Note"></textarea>
+      <button class="btn primary" id="saveBtn">Save</button>
+    </div>
+    <div class="page-card">
+      <h3 style="margin:0">Vouchers</h3>
+      <table class="tbl"><thead><tr><th>Date</th><th>Type</th><th>Party</th><th>Amount</th></tr></thead><tbody id="rows"></tbody></table>
     </div>
   </div>
+</div></div>
 
-  <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
+<footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Vendor -->
-  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
-
-  <!-- App -->
-  <script type="module">
-    import db from './scripts/db.js';
-
-    // Topbar wiring
-    const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
-    html.setAttribute('data-theme',saved);
-    themeBtn.onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark'; html.setAttribute('data-theme',n); localStorage.setItem('theme',n);};
-    logoutBtn.onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-    clearCacheBtn.onclick=async()=>{
-      if(!confirm('Clear caches + DB?')) return;
-      if('caches' in window){ const ns=await caches.keys(); for(const n of ns) await caches.delete(n); }
-      await db.delete();
-      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
-      location.reload();
-    };
-
-    // DOM helpers
-    const E=id=>document.getElementById(id);
-    const money=n=>'₹'+Number(n||0).toFixed(2);
-    const today=()=>new Date().toISOString().slice(0,10);
-
-    // Form defaults
-    E('vdate').value = today();
-
-    // Save voucher
-    E('saveBtn').onclick = async ()=>{
-      const type = E('type').value;
-      const amount = Number(E('amount').value||0);
-      const party = E('party').value||null;
-      const note  = E('note').value||null;
-      const date  = E('vdate').value || today();
-
-      if(!amount || amount<=0){ E('msg').textContent='Enter a valid amount.'; return; }
-
-      await db.vouchers.add({ date, type, amount, party, note });
-      E('msg').textContent = `Saved ${type} of ${money(amount)}.`;
-      // reset minimal
-      E('amount').value=''; E('note').value='';
-      // refresh table
-      await load();
-    };
-
-    E('clearFormBtn').onclick=()=>{
-      E('type').value='receipt';
-      E('amount').value='';
-      E('party').value='';
-      E('note').value='';
-      E('vdate').value=today();
-      E('msg').textContent='';
-    };
-
-    // Filters
-    const rows=E('rows'), tRec=E('tRec'), tPay=E('tPay'), tNet=E('tNet');
-    const from=E('from'), to=E('to'), fType=E('fType'), q=E('q');
-    from.value = to.value = today();
-
-    E('filterBtn').onclick=load;
-    q.addEventListener('input',load);
-    E('printBtn').onclick=()=>window.print();
-    E('csvBtn').onclick=async()=>{
-      const list = await load(true);
-      let csv = 'Date,Type,Party,Amount,Note\n';
-      list.forEach(v=>{
-        const safeNote=(v.note||'').replaceAll('"','""');
-        csv += `${v.date},${v.type},${v.party||''},${v.amount},"${safeNote}"\n`;
-      });
-      csv += `\nTotals,,,\nReceipts,${Number(tRec.dataset.raw||0)}\nPayments,${Number(tPay.dataset.raw||0)}\nNet,${Number(tNet.dataset.raw||0)}\n`;
-      const blob=new Blob([csv],{type:'text/csv'});
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download='pharmacy_vouchers.csv';
-      a.click();
-    };
-
-    // Load + render
-    async function load(returnList=false){
-      let list = await db.vouchers.toArray();
-
-      if(from.value) list = list.filter(v=>(v.date||'')>=from.value);
-      if(to.value)   list = list.filter(v=>(v.date||'')<=to.value);
-      if(fType.value) list = list.filter(v=>v.type===fType.value);
-
-      const s=(q.value||'').toLowerCase().trim();
-      if(s){
-        list = list.filter(v=>{
-          const hay=[v.party,v.note].map(x=>(x||'').toLowerCase()).join('|');
-          return hay.includes(s);
-        });
-      }
-
-      list.sort((a,b)=>(b.date||'').localeCompare(a.date||'') || (b.id - a.id));
-
-      rows.innerHTML = list.map(v=>`
-        <tr>
-          <td class="mono">${v.date||''}</td>
-          <td>${v.type}</td>
-          <td>${v.party||''}</td>
-          <td class="mono">${money(v.amount||0)}</td>
-          <td class="small">${v.note||''}</td>
-          <td><button class="btn" data-id="${v.id}" data-act="del">Del</button></td>
-        </tr>
-      `).join('');
-
-      // Row actions (delete)
-      rows.querySelectorAll('[data-act="del"]').forEach(btn=>{
-        btn.onclick = async ()=>{
-          const id=Number(btn.dataset.id);
-          if(!confirm('Delete this voucher?')) return;
-          await db.vouchers.delete(id);
-          load();
-        };
-      });
-
-      // Totals
-      const rec = list.filter(v=>v.type==='receipt').reduce((s,v)=>s+Number(v.amount||0),0);
-      const pay = list.filter(v=>v.type==='payment').reduce((s,v)=>s+Number(v.amount||0),0);
-      const net = rec - pay;
-
-      tRec.textContent = money(rec); tRec.dataset.raw = rec;
-      tPay.textContent = money(pay); tPay.dataset.raw = pay;
-      tNet.textContent = money(net); tNet.dataset.raw = net;
-
-      return returnList ? list : undefined;
-    }
-
-    // First draw
-    load();
-  </script>
-</body>
-</html>
+<script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+<script type="module">
+ import db from './scripts/db.js'; const E=id=>document.getElementById(id), rows=E('rows');
+ const today=()=>new Date().toISOString().slice(0,10);
+ saveBtn.onclick=async()=>{await db.vouchers.add({date:today(),type:E('type').value,amount:Number(E('amount').value||0),party:E('party').value||null,note:E('note').value||null});render()};
+ async function render(){let list=await db.vouchers.toArray();list.sort((a,b)=>(b.date||'').localeCompare(a.date||''));rows.innerHTML=list.map(v=>`<tr><td>${v.date}</td><td>${v.type}</td><td>${v.party||''}</td><td>₹${(v.amount||0).toFixed(2)}</td></tr>`).join('')}
+ render();
+</script></body></html>

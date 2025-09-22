@@ -8,14 +8,12 @@
   <link rel="icon" href="./public/assets/icon-192.png">
   <link rel="stylesheet" href="./styles/styles.css">
   <meta name="theme-color" content="#17B26A"/>
-  <style>
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .hint{opacity:.8}
-  </style>
 </head>
 <body>
-  <!-- Banner -->
-  <div class="hero-card"><img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic"></div>
+  <!-- Banner card -->
+  <div class="hero-card">
+    <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
+  </div>
 
   <!-- Topbar -->
   <div class="topbar">
@@ -37,37 +35,48 @@
         <button class="btn" id="regSwBtn">Register Service Worker</button>
       </div>
 
-      <!-- Built-in, no external seed files -->
-      <div style="margin:14px 0">
-        <h3 style="margin:0 0 6px">Seed Test Data</h3>
-        <div class="row">
-          <button class="btn" id="seedBtn">Seed Test Data</button>
-          <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
-          <span class="small hint">Creates P001–P005, 7-day bookings/slots, basic lab.</span>
-        </div>
+      <!-- Test tools (hide if missing) -->
+      <div id="testWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="seedBtn">Seed Test Data</button>
+        <button class="btn" id="clearBtn" style="background:var(--bad);color:#fff;border:0">Clear Test Data</button>
+        <span class="small" style="align-self:center;opacity:.8">Seeds P001–P005 locally with last-7-days spread.</span>
       </div>
 
-      <div style="margin:14px 0">
-        <h3 style="margin:0 0 6px">Seed Pharmacy Data</h3>
-        <div class="row">
-          <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
-          <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
-          <span class="small hint">Adds SEED-* items, stock, sample invoices & vouchers.</span>
-        </div>
+      <!-- Pharmacy tools (hide if missing) -->
+      <div id="pharmWrap" style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
+        <button class="btn" id="clearPharmBtn" style="background:var(--bad);color:#fff;border:0">Clear Pharmacy Data</button>
+        <span class="small" style="align-self:center;opacity:.8">Populates master items, adjusts stock, logs vouchers.</span>
       </div>
     </div>
   </div>
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Dexie + DB -->
+  <!-- Dexie first -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
   <script src="./scripts/db.js"></script>
 
-  <!-- Settings logic (includes seeding) -->
-  <script src="./scripts/settings.js"></script>
+  <!-- Optional seeders -->
+  <script src="./scripts/test-seed.js"></script>
+  <script src="./scripts/pharmacy-seed.js"></script>
 
-  <!-- Optional notifications helper -->
+  <!-- Core logic -->
+  <script src="./scripts/settings.js"></script>
   <script src="./scripts/notifications.js"></script>
+
+  <!-- Hide seed blocks if scripts missing -->
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      if (typeof window.seedTestData !== 'function') {
+        const demoWrap = document.getElementById('testWrap');
+        if (demoWrap) demoWrap.style.display = 'none';
+      }
+      if (typeof window.seedPharmacyData !== 'function') {
+        const pharmWrap = document.getElementById('pharmWrap');
+        if (pharmWrap) pharmWrap.style.display = 'none';
+      }
+    });
+  </script>
 </body>
 </html>

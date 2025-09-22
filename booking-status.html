@@ -20,6 +20,7 @@
     .board{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
     .board-card{background:var(--card);border:1px solid var(--ring);border-radius:var(--card-radius);box-shadow:var(--shadow);padding:12px}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+    .big{font-size:2.2rem;font-weight:800}
     .queue li{display:flex;justify-content:space-between;padding:.5rem;border-bottom:1px solid var(--ring)}
     .muted{color:var(--muted)}
   </style>
@@ -94,22 +95,19 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Supabase + Cloud wrapper -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script>
-    // configure once (same as analytics.html)
-    window.__SUPA = {
-      url: "https://mngkgitmcudogekzmimv.supabase.co",
-      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
-    };
-  </script>
-  <script src="./scripts/cloud.js"></script>
+  <!-- Vendor -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
 
-  <!-- App page logic -->
+  <!-- App scripts -->
+  <script src="./scripts/sw-update.js"></script>
+  <script src="./scripts/data-wire.js"></script>
+  <script src="./scripts/auth.js"></script>
+
   <script type="module">
-    import { cloud } from './scripts/cloud.js';
+    import db from './scripts/db.js';
+    import { onClinicChange } from './scripts/data-wire.js';
 
-    // Role: public board is fine; if role is unknown leave as-is
+    // Role: public board is fine, but if role known enforce doctor/supervisor/frontoffice access quietly
     const role=localStorage.getItem('role');
     if(role && !['doctor','supervisor','frontoffice'].includes(role)){ localStorage.removeItem('role'); }
 
@@ -122,16 +120,17 @@
       html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
     };
     document.getElementById('clearCacheBtn').onclick=async()=>{
-      if(!confirm('Clear browser caches?')) return;
+      if(!confirm('Clear caches + DB?')) return;
       if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+      await db.delete();
       const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
       location.reload();
     };
     document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
 
-    // Helpers + elements
     const E=id=>document.getElementById(id);
     const todayISO=()=> new Date().toISOString().slice(0,10);
+
     E('day').value = todayISO();
 
     const nowServing = E('nowServing');
@@ -141,26 +140,23 @@
     const qPending = E('qPending');
     const qDone = E('qDone');
     const aEmpty=E('aEmpty'), pEmpty=E('pEmpty'), dEmpty=E('dEmpty');
-    const modeEl=E('mode');
 
     let mode='appointments'; // or 'slots'
 
     async function load(){
       const date=E('day').value || todayISO();
 
-      // Prefer appointments for the day
-      const { data: appts, error: apErr } = await cloud.selectWhere('appointments',{date});
-      if (apErr) console.error(apErr);
+      // Prefer appointments
+      let appts = await db.appointments.where('date').equals(date).toArray();
 
-      if(appts?.length){
-        mode='appointments'; modeEl.textContent='appointments';
+      if(appts.length){
+        mode='appointments'; E('mode').textContent='appointments';
         renderFromAppointments(appts);
       }else{
         // fallback to slots
-        const { data: slots, error: slErr } = await cloud.selectWhere('slots',{date});
-        if (slErr) console.error(slErr);
-        mode='slots'; modeEl.textContent='slots';
-        renderFromSlots(slots||[]);
+        const slots = await db.slots.where('date').equals(date).toArray();
+        mode='slots'; E('mode').textContent='slots';
+        renderFromSlots(slots);
       }
     }
 
@@ -202,7 +198,7 @@
     }
 
     function renderFromSlots(slots){
-      const proj = (slots||[]).map(s=>({
+      const proj = slots.map(s=>({
         time:s.time, token:s.token||'', name:s.name||'', status:s.apptStatus||'pending'
       })).sort((a,b)=> a.time.localeCompare(b.time));
 
@@ -218,15 +214,9 @@
     await load();
     E('day').addEventListener('change', load);
 
-    // Realtime updates: listen to both sources
-    cloud.listen('appointments', (payload)=>{ 
-      // only refresh if the row is for the chosen day
-      const d = E('day').value || todayISO();
-      if(payload?.new?.date===d || payload?.old?.date===d) load();
-    });
-    cloud.listen('slots', (payload)=>{
-      const d = E('day').value || todayISO();
-      if(payload?.new?.date===d || payload?.old?.date===d) load();
+    // Live updates
+    onClinicChange(e=>{
+      if(['appointments:changed','slots:changed'].includes(e?.evt)) load();
     });
 
     // Periodic auto refresh (board-style)

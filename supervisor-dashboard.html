@@ -8,10 +8,6 @@
   <link rel="icon" href="./public/assets/icon-192.png">
   <link rel="stylesheet" href="./styles/styles.css">
   <meta name="theme-color" content="#17B26A"/>
-  <style>
-    .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px }
-    .knum { font-size:2rem; font-weight:800; line-height:1.1 }
-  </style>
 </head>
 <body>
   <!-- Banner CARD -->
@@ -44,37 +40,31 @@
           <h3>Bookings</h3>
           <div class="knum" id="kBookings">0</div>
         </a>
-
         <a class="tile cyan" href="./booking-status.html">
           <h3>Booking Status</h3>
           <div class="knum" id="kApproved">0</div>
           <div class="small">Approved today</div>
         </a>
-
         <a class="tile blue" href="./supervisor.html">
           <h3>Approvals</h3>
           <div class="knum" id="kPending">0</div>
           <div class="small">Pending today</div>
         </a>
-
         <a class="tile purple" href="./pharmacy.html">
           <h3>Pharmacy Hub</h3>
           <div class="knum" id="kBills">0</div>
           <div class="small">Invoices today</div>
         </a>
-
         <a class="tile green" href="./patients-hub.html">
           <h3>Patients Hub (RO)</h3>
           <div class="knum" id="kPatients">0</div>
           <div class="small">Total patients</div>
         </a>
-
         <a class="tile pink" href="./lab-orders.html">
           <h3>Lab</h3>
           <div class="knum" id="kLab">0</div>
           <div class="small">Orders today</div>
         </a>
-
         <a class="tile teal" href="./alerts.html">
           <h3>Alerts</h3>
           <div class="knum" id="kAlertsSup">0</div>
@@ -85,54 +75,33 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Vendor -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
-
-  <!-- App bus -->
   <script src="./scripts/data-wire.js"></script>
-
-  <!-- Page logic -->
   <script type="module">
     import db from './scripts/db.js';
     import { onClinicChange } from './scripts/data-wire.js';
 
-    // ----- Role guard (supervisor primary; doctor allowed) -----
+    // Role guard (supervisor primary; doctor allowed)
     const role = localStorage.getItem('role');
     if(!role){ location.href='./login.html'; }
     if(!(role==='supervisor' || role==='doctor')){ alert('Supervisor only'); location.href='./login.html'; }
 
-    // ----- Theme / housekeeping -----
-    const html=document.documentElement;
-    const saved=localStorage.getItem('theme')||'dark';
+    // Theme / housekeeping
+    const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
     html.setAttribute('data-theme',saved);
+    themeBtn.onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n)};
+    clearCacheBtn.onclick=async()=>{ if(!confirm('Clear caches + DB?')) return; if('caches'in window){const ns=await caches.keys(); for(const n of ns) await caches.delete(n);} localStorage.clear(); location.reload(); };
+    logoutBtn.onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
 
-    // Buttons live in this module scope so we can call db.delete()
-    document.getElementById('themeBtn').onclick=()=>{
-      const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
-      html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
-      try{ window.dispatchEvent(new CustomEvent('theme:changed')); }catch{}
-    };
-    document.getElementById('clearCacheBtn').onclick=async()=>{
-      if(!confirm('Clear caches + DB?')) return;
-      if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
-      await db.delete(); // drop IndexedDB
-      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
-      location.reload();
-    };
-    document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-
-    // ----- Helpers -----
     const E=id=>document.getElementById(id);
-    const todayISO=()=> new Date().toISOString().slice(0,10);
-    E('todayStr').textContent=todayISO();
+    const today=()=>new Date().toISOString().slice(0,10);
+    E('todayStr').textContent=today();
 
-    // ----- KPIs -----
     async function refresh(){
-      const d=todayISO();
-
+      const d=today();
       const appts = await db.appointments.where('date').equals(d).toArray();
-      E('kPending').textContent  = appts.filter(a => (a.status||'pending')==='pending').length;
-      E('kApproved').textContent = appts.filter(a => a.status==='approved').length;
+      E('kPending').textContent  = appts.filter(a=>(a.status||'pending')==='pending').length;
+      E('kApproved').textContent = appts.filter(a=>a.status==='approved').length;
       E('kBookings').textContent = appts.length;
 
       const inv = await db.invoices.where('date').equals(d).toArray();
@@ -140,21 +109,9 @@
 
       E('kPatients').textContent = await db.patients.count();
       E('kLab').textContent = await db.labInvoices.where('date').equals(d).count();
-
-      // Alerts placeholder (keep ID; set to 0 until wired to a source)
-      if (E('kAlertsSup')) E('kAlertsSup').textContent = '0';
     }
-
-    // Initial + live refresh
     await refresh();
     onClinicChange(()=>refresh());
-
-    // Also refresh when the tab becomes visible
-    document.addEventListener('visibilitychange', ()=>{
-      if(!document.hidden) refresh();
-    });
-
-    // Safety: periodic refresh
     setInterval(refresh, 30000);
   </script>
 </body>

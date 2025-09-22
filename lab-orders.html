@@ -101,26 +101,23 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Supabase + cloud helper -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script>
-    window.__SUPA = {
-      url: "https://mngkgitmcudogekzmimv.supabase.co",
-      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
-    };
-  </script>
-  <script src="./scripts/cloud.js"></script>
+  <!-- Vendor -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+
+  <!-- App scripts -->
+  <script src="./scripts/data-wire.js"></script>
   <script src="./scripts/notifications.js"></script>
 
   <script type="module">
-    import { cloud } from './scripts/cloud.js';
+    import db from './scripts/db.js';
+    import { emitClinicChange } from './scripts/data-wire.js';
 
     // Theme + housekeeping
     const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
     html.setAttribute('data-theme',saved);
     document.getElementById('themeBtn').onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n)};
     document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-    document.getElementById('clearCacheBtn').onclick=()=>{ if(!confirm('Clear caches?')) return; localStorage.clear(); location.reload(); };
+    document.getElementById('clearCacheBtn').onclick=async()=>{ if(!confirm('Clear caches + DB?')) return; if('caches' in window){ const n=await caches.keys(); for(const k of n) await caches.delete(k);} localStorage.clear(); location.reload(); };
 
     const E=id=>document.getElementById(id);
     const money=v=>'₹'+Number(v||0).toFixed(2);
@@ -129,7 +126,7 @@
     // Date default
     E('date').value = today();
 
-    // ---------- Patient search ----------
+    // ---------- Patient search & pick ----------
     const pSearch=E('pSearch'), pPick=E('pPick'), pId=E('patientId'), pName=E('patientName');
     E('pClear').onclick=()=>{ pId.value=''; pName.value=''; pSearch.value=''; pPick.innerHTML=''; };
 
@@ -138,16 +135,16 @@
     async function renderPatientSearch(){
       const s=(pSearch.value||'').toLowerCase().trim();
       if(!s){ pPick.innerHTML=''; return; }
-      const { data: rows=[] } = await cloud.selectAll('patients');
-      const filtered = rows.filter(p=>{
+      let rows = await db.patients.toArray();
+      rows = rows.filter(p=>{
         const hay=[p.phone,p.pid,p.name].map(x=>(x||'').toLowerCase()).join('|');
         return hay.includes(s);
       }).slice(0,100);
-      filtered.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      rows.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
       pPick.innerHTML='';
-      filtered.forEach(p=>{
+      rows.forEach(p=>{
         const div=document.createElement('div'); div.className='row';
-        div.innerHTML=`<div>
+        div.innerHTML = `<div>
           <strong>${p.name||''}</strong> <span class="smallmuted">(${p.phone||''})</span>
           <div class="smallmuted mono">${p.pid||''}</div>
         </div>
@@ -160,24 +157,23 @@
       });
     }
 
-    // ---------- Tests ----------
+    // ---------- Tests list ----------
     const testsEl=E('tests'), q=E('q');
 
     async function renderTests(){
       const s=(q.value||'').toLowerCase().trim();
-      const { data: rows=[] } = await cloud.selectAll('labTests');
-      let filtered=rows;
+      let rows = await db.labTests.toArray();
       if(s){
-        filtered = rows.filter(t=>{
+        rows = rows.filter(t=>{
           const hay=[t.name,t.code,t.barcode].map(x=>(x||'').toLowerCase()).join('|');
           return hay.includes(s);
         });
       }
-      filtered.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      rows.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
       testsEl.innerHTML='';
-      filtered.forEach(t=>{
+      rows.forEach(t=>{
         const div=document.createElement('div'); div.className='row';
-        div.innerHTML=`<div>
+        div.innerHTML = `<div>
             <strong>${t.name||''}</strong> <span class="smallmuted">${t.code||''}</span>
             <div class="smallmuted mono">₹${Number(t.price||0).toFixed(2)}</div>
           </div>
@@ -188,22 +184,22 @@
     }
     q.addEventListener('input', renderTests);
 
-    // Add custom
+    // Add custom (ad-hoc) test
     E('addCustom').onclick=()=>{
-      const name=prompt('Custom test name?'); if(!name) return;
-      const price=Number(prompt('Price?')||0);
+      const name = prompt('Custom test name?'); if(!name) return;
+      const price = Number(prompt('Price?')||0);
       addToCart({ code:null, name, price:isNaN(price)?0:price });
     };
 
     // ---------- Cart ----------
     const cartEl=E('cart'), kCount=E('kCount'), kTotal=E('kTotal'), msg=E('msg');
-    let cart=[];
+    let cart=[]; // {code,name,price,qty}
 
     function refreshBadges(){
-      const total=cart.reduce((s,l)=>s+(l.qty||1)*(l.price||0),0);
-      const count=cart.reduce((s,l)=>s+(l.qty||1),0);
-      kCount.textContent=count;
-      kTotal.textContent=money(total);
+      const total = cart.reduce((s,l)=> s + Number(l.qty||0)*Number(l.price||0), 0);
+      const count = cart.reduce((s,l)=> s + Number(l.qty||0), 0);
+      kCount.textContent = count;
+      kTotal.textContent = money(total);
       return {count,total};
     }
 
@@ -212,7 +208,7 @@
       if(!cart.length){ cartEl.innerHTML='<div class="smallmuted">No tests added.</div>'; refreshBadges(); return; }
       cart.forEach((l,i)=>{
         const row=document.createElement('div'); row.className='row';
-        row.innerHTML=`
+        row.innerHTML = `
           <div>
             <strong>${l.name}</strong> <span class="smallmuted">${l.code||''}</span>
             <div class="smallmuted mono">₹/test: ${Number(l.price||0).toFixed(2)}</div>
@@ -223,8 +219,8 @@
             <button class="btn">X</button>
           </div>`;
         const [qtyIn,priceIn,delBtn]=row.querySelectorAll('input,button');
-        qtyIn.onchange=()=>{ l.qty=Number(qtyIn.value||1); refreshBadges(); };
-        priceIn.onchange=()=>{ l.price=Number(priceIn.value||0); refreshBadges(); };
+        qtyIn.onchange=()=>{ l.qty=Number(qtyIn.value||0)||1; refreshBadges(); };
+        priceIn.onchange=()=>{ l.price=Number(priceIn.value||0)||0; refreshBadges(); };
         delBtn.onclick=()=>{ cart.splice(i,1); renderCart(); };
         cartEl.appendChild(row);
       });
@@ -241,31 +237,31 @@
     // ---------- Save Order ----------
     E('saveBtn').onclick=async()=>{
       msg.textContent='';
-      if(!pId.value || !pName.value){ alert('Select or enter patient.'); return; }
+      if(!pId.value || !pName.value){ alert('Select or enter patient details.'); return; }
       if(cart.length===0){ alert('Add at least one test.'); return; }
-      const {total}=refreshBadges();
-      const date=E('date').value || today();
+      const {total} = refreshBadges();
+      const date = E('date').value || today();
 
-      const { data, error } = await cloud.insert('labInvoices',{
-        date,
-        patientId:pId.value,
-        patientName:pName.value,
-        amount:Number(total||0),
-        note:E('note').value||null,
-        createdAt:new Date().toISOString()
+      // Save to labInvoices (schema: ++id, date, patientId, patientName, amount)
+      const id = await db.labInvoices.add({
+        date, patientId: pId.value, patientName: pName.value, amount: Number(total||0)
       });
-      if(error){ msg.textContent='Error saving: '+error.message; return; }
 
-      // Notify doctor
+      // MVP notification for doctor
       try{
         if(window.notifyDoctor){
           window.notifyDoctor({ title:`New lab order: ${pId.value}`, body:`₹${Number(total).toFixed(2)} — ${pName.value}`, tag:'lab' });
         }
       }catch{}
 
-      cart=[]; renderCart(); E('note').value='';
-      msg.textContent=`Saved lab order for ${pName.value}.`;
-      alert('Saved lab order for '+pName.value);
+      // Emit bus
+      emitClinicChange('lab:order',{invoiceId:id,date,total});
+
+      // Reset
+      cart=[]; renderCart();
+      E('note').value='';
+      msg.textContent = `Saved lab order #${id} for ${pName.value}.`;
+      alert('Saved lab order #'+id);
     };
 
     // Init

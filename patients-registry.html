@@ -69,18 +69,11 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Supabase + cloud helper -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script>
-    window.__SUPA = {
-      url: "https://mngkgitmcudogekzmimv.supabase.co",
-      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
-    };
-  </script>
-  <script src="./scripts/cloud.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+  <script src="./scripts/data-wire.js"></script>
   <script type="module">
-    import { cloud } from './scripts/cloud.js';
+    import db from './scripts/db.js';
+    import { emitClinicChange } from './scripts/data-wire.js';
 
     // Role guard: doctor/frontoffice edit, supervisor read-only
     const role=localStorage.getItem('role')||'doctor';
@@ -91,7 +84,7 @@
     html.setAttribute('data-theme',saved);
     document.getElementById('themeBtn').onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n);};
     document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-    document.getElementById('clearCacheBtn').onclick=()=>{ if(!confirm('Clear caches?')) return; localStorage.clear(); location.reload(); };
+    document.getElementById('clearCacheBtn').onclick=async()=>{ if(!confirm('Clear caches + DB?')) return; if('caches' in window){ const n=await caches.keys(); for(const k of n) await caches.delete(k);} localStorage.clear(); location.reload(); };
 
     const E=id=>document.getElementById(id);
     const msg=E('msg');
@@ -111,8 +104,8 @@
         name:E('name').value.trim(),
         parent:E('parent').value.trim()||null,
         dob:E('dob').value||null,
-        heightCm:E('height').value?Number(E('height').value):null,
-        weightKg:E('weight').value?Number(E('weight').value):null,
+        heightCm:Number(E('height').value||0)||null,
+        weightKg:Number(E('weight').value||0)||null,
       };
     }
     function setForm(p){
@@ -134,17 +127,18 @@
       const p=formData();
       if(!p.phone || !p.name){ msg.textContent='Phone and Child Name are required.'; return; }
 
-      // Check for duplicate phone
-      const { data: dupes } = await cloud.selectWhere('patients',{ phone:p.phone });
-      if(dupes && dupes.length){
+      // Duplicate by phone?
+      const dupe = await db.patients.where('phone').equals(p.phone).first();
+      let id=null;
+      if(dupe){
         if(!confirm('A patient with this phone exists. Overwrite?')){ msg.textContent='Cancelled'; return; }
-        const id = dupes[0].id;
-        await cloud.update('patients', id, {...p, updatedAt:new Date().toISOString()});
-        msg.textContent='Updated existing patient.';
+        id=dupe.id;
+        await db.patients.update(id,{...p, updatedAt:Date.now()});
       }else{
-        await cloud.insert('patients',{...p, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString()});
-        msg.textContent='New patient saved.';
+        id = await db.patients.add({...p, createdAt:Date.now(), updatedAt:Date.now()});
       }
+      msg.textContent='Saved.';
+      emitClinicChange('patients:changed',{id,phone:p.phone});
       renderList();
     }
     document.getElementById('saveBtn').onclick=save;
@@ -155,17 +149,16 @@
 
     async function renderList(){
       const s=(q.value||'').toLowerCase();
-      const { data: rows } = await cloud.selectAll('patients');
-      let filtered=rows||[];
+      let rows = await db.patients.toArray();
       if(s){
-        filtered = filtered.filter(p=>{
+        rows = rows.filter(p=>{
           const hay=[p.phone,p.name,p.pid,p.barcode].map(x=>(x||'').toString().toLowerCase()).join('|');
           return hay.includes(s);
         });
       }
-      filtered.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
       list.innerHTML='';
-      filtered.forEach(p=>{
+      rows.forEach(p=>{
         const div=document.createElement('div');
         div.className='row';
         div.innerHTML=`<div><strong>${p.name||''}</strong> <span class="muted">(${p.phone||''})</span></div>
@@ -176,9 +169,6 @@
     }
 
     renderList();
-
-    // Listen for realtime changes
-    cloud.listen('patients', ()=>renderList());
   </script>
 </body>
 </html>

@@ -1,83 +1,166 @@
-<script>
-// pharmacy-seed.js
-(function(){
-  const hasCloud = !!(window.cloud && typeof window.cloud.insert === 'function');
-  let db;
-  async function ensureDB(){
-    if (db) return db;
-    if (!window.Dexie || !window.db) throw new Error('[pharm-seed] Dexie/db.js not loaded');
-    db = window.db || (await import('./db.js')).default;
-    return db;
+// scripts/pharmacy-seed.js
+// Plain script. Exposes window.seedPharmacyData / window.clearPharmacyData
+
+(function () {
+  if (!window.Dexie) { console.error("pharmacy-seed: Dexie not loaded"); return; }
+  if (!window.db)    { console.error("pharmacy-seed: window.db not found. Ensure scripts/db.js sets window.db = db"); return; }
+
+  const REQUIRE_STORES = ["pharmacyItems","invoices","invoiceItems","vouchers"];
+  const SEED_SKU_PREFIX = "SEED-";
+  const SEED_SUPPLIER   = "Seed Supplier";
+  const SEED_PARTY      = "Seed Walk-in";
+  const SEED_BILL_PREFIX= "PS-";
+
+  const CATALOG = [
+    { sku: SEED_SKU_PREFIX+"PARA-250", barcode:"890101", name:"Paracetamol 250mg Syrup 60ml", mrp:55 },
+    { sku: SEED_SKU_PREFIX+"ORS",      barcode:"890102", name:"ORS Pack 21g",                 mrp:18 },
+    { sku: SEED_SKU_PREFIX+"COUGH-60", barcode:"890103", name:"Cough Syrup 60ml",             mrp:75 },
+    { sku: SEED_SKU_PREFIX+"ZINC-10",  barcode:"890104", name:"Zinc Drops 10ml",              mrp:80 },
+    { sku: SEED_SKU_PREFIX+"VITA-D",   barcode:"890105", name:"Vit D3 Drops 15ml",            mrp:95 },
+    { sku: SEED_SKU_PREFIX+"THERM",    barcode:"890106", name:"Digital Thermometer",          mrp:180 }
+  ];
+
+  const dayISO=(off=0)=>{const d=new Date(); d.setDate(d.getDate()-off); return d.toISOString().slice(0,10);};
+  const rint=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
+  const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+
+  async function ensureReady(){
+    await db.open();
+    const have=db.tables.map(t=>t.name);
+    const missing = REQUIRE_STORES.filter(s=>!have.includes(s));
+    if(missing.length) throw new Error("pharmacy-seed: Missing stores — "+missing.join(", "));
+    return { hasAlerts: have.includes("alerts") };
   }
-  function today(d=0){ const t=new Date(); t.setDate(t.getDate()+d); return t.toISOString().slice(0,10); }
 
-  async function seedPharmacyData(){
-    await ensureDB();
-    console.log('[pharm-seed] start');
-
-    const items = [
-      { name:'Paracetamol 250mg', sku:'SEED-PARA-250', mrp:35, stock:80, barcode:'PARA250' },
-      { name:'Cetrizine 10mg',   sku:'SEED-CET-10',   mrp:28, stock:90, barcode:'CET10' },
-      { name:'ORS 1L',           sku:'SEED-ORS-1L',   mrp:22, stock:60, barcode:'ORS1' }
-    ];
-    for (const it of items){
-      const ex = await db.pharmacyItems.where('sku').equals(it.sku).first();
-      if (ex) await db.pharmacyItems.update(ex.id,it); else await db.pharmacyItems.add(it);
-    }
-
-    // seed some purchases + receipts and sales
-    for (let d=-3; d<=0; d++){
-      const invP = await db.invoices.add({ date:today(d), type:'purchase', total:500 + d*20, supplier:'SEED-SUP', bill:'BILL-'+(100+d) });
-      await db.invoiceItems.add({ invoiceId:invP, sku:'SEED-PARA-250', name:'Paracetamol 250mg', qty:10, price:30, party:'SEED-SUP' });
-      // bump stock
-      const it = await db.pharmacyItems.where('sku').equals('SEED-PARA-250').first();
-      if (it) await db.pharmacyItems.update(it.id,{ stock: (it.stock||0) + 10 });
-
-      const invS = await db.invoices.add({ date:today(d), type:'sale', total:120 + d*10, party:null });
-      await db.invoiceItems.add({ invoiceId:invS, sku:'SEED-CET-10', name:'Cetrizine 10mg', qty:2, price:28, party:null });
-      const it2 = await db.pharmacyItems.where('sku').equals('SEED-CET-10').first();
-      if (it2) await db.pharmacyItems.update(it2.id,{ stock: Math.max(0,(it2.stock||0) - 2) });
-    }
-
-    // Zero-amount journal to show in reports
-    await db.vouchers.add({ date:today(0), type:'journal', amount:0, party:'note', note:'pharmacy demo seed' });
-
-    if (hasCloud){
-      try{
-        for (const it of items){
-          await window.cloud.upsert('pharmacy_items', { sku:it.sku, name:it.name, barcode:it.barcode, mrp:it.mrp, stock:it.stock }, ['sku']);
-        }
-        console.log('[pharm-seed] cloud mirror ok');
-      }catch(e){ console.warn('[pharm-seed] cloud mirror skipped:', e.message); }
-    }
-
-    console.log('[pharm-seed] done');
-    return true;
+  async function adjustStock(sku, delta){
+    const item = await db.pharmacyItems.where("sku").equals(sku).first();
+    if(!item) throw new Error("Stock item not found for "+sku);
+    const stock = Number(item.stock||0) + Number(delta||0);
+    await db.pharmacyItems.update(item.id, { stock });
+    return stock;
   }
 
   async function clearPharmacyData(){
-    await ensureDB();
-    const seedItems = await db.pharmacyItems.where('sku').startsWith('SEED-').toArray();
-    for (const r of seedItems) await db.pharmacyItems.delete(r.id);
+    await ensureReady();
+    const items = await db.pharmacyItems.where("sku").startsWith(SEED_SKU_PREFIX).toArray();
+    for(const it of items) await db.pharmacyItems.delete(it.id);
 
-    const inv = await db.invoices.toArray();
-    for (const i of inv){
-      if ((i.supplier||'').includes('SEED') || i.type==='sale' || i.type==='purchase'){
-        await db.invoices.delete(i.id);
-      }
+    const inv = await db.invoices.where("bill").startsWith(SEED_BILL_PREFIX).toArray();
+    for(const v of inv){
+      await db.invoiceItems.where("invoiceId").equals(v.id).delete();
+      await db.invoices.delete(v.id);
     }
-    await db.invoiceItems.clear();
 
-    const vAll = await db.vouchers.toArray();
-    for (const v of vAll){ if ((v.note||'').includes('demo seed') || v.party==='note') await db.vouchers.delete(v.id); }
+    const vch = await db.vouchers.where("party").equals(SEED_SUPPLIER).toArray();
+    for(const v of vch) await db.vouchers.delete(v.id);
 
-    if (hasCloud){
-      try{ await window.cloud.delete('pharmacy_items', { sku: 'SEED-%' }); }catch{}
-    }
+    try{
+      localStorage.setItem("clinic.pulse", JSON.stringify({t:Date.now(),evt:"pharmacy:cleared"}));
+      localStorage.removeItem("clinic.pulse");
+    }catch{}
+    console.info("pharmacy-seed: cleared");
     return true;
   }
 
-  window.seedPharmacyData = seedPharmacyData;
+  async function addInvoice({date,type,items,party=null,supplier=null,pid=null}){
+    const total = items.reduce((s,it)=>s+Number(it.price)*Number(it.qty),0);
+    const bill  = SEED_BILL_PREFIX + Math.random().toString(36).slice(2,7).toUpperCase();
+    const invoiceId = await db.invoices.add({ date,type,total,pid,party,supplier,bill });
+    for(const it of items){
+      await db.invoiceItems.add({
+        invoiceId, sku:it.sku, name:it.name, qty:it.qty, price:it.price,
+        party: party || supplier || SEED_PARTY
+      });
+    }
+    return { invoiceId, bill, total };
+  }
+
+  async function checkLowStockAndAlert(hasAlerts, threshold=5){
+    const low = await db.pharmacyItems.where("stock").below(threshold).toArray();
+    const today = new Date().toISOString().slice(0,10);
+    for(const it of low){
+      if(hasAlerts){
+        try{ await db.alerts.add({ date:today, type:"low-stock", sku:it.sku, message:`${it.name} low stock: ${it.stock}` }); }catch{}
+      }
+      if("Notification" in window && Notification.permission==="granted"){
+        new Notification("Low stock alert", {
+          body: `${it.name} (SKU: ${it.sku}) — only ${it.stock} left`,
+          tag: `lowstock-${it.sku}`,
+          icon: "./public/assets/icon-192.png",
+          badge: "./public/assets/icon-192.png"
+        });
+      }
+    }
+    return low.length;
+  }
+
+  async function seedPharmacyData(){
+    const { hasAlerts } = await ensureReady();
+    await clearPharmacyData();
+
+    // Inventory zero; purchases will add stock
+    for(const row of CATALOG){
+      const exist = await db.pharmacyItems.where("sku").equals(row.sku).first();
+      if(!exist) await db.pharmacyItems.add({ ...row, stock:0 });
+    }
+
+    // 7-day flow
+    for(let d=6; d>=0; d--){
+      const date = dayISO(d);
+
+      // Purchases (+stock)
+      const pItems=[];
+      const pLines=rint(1,2);
+      for(let i=0;i<pLines;i++){
+        const it=pick(CATALOG); const qty=rint(5,15);
+        pItems.push({ sku:it.sku, name:it.name, qty, price:Math.round(it.mrp*0.7) });
+      }
+      await addInvoice({ date, type:"purchase", supplier:SEED_SUPPLIER, items:pItems });
+      for(const li of pItems) await adjustStock(li.sku, +li.qty);
+
+      // sometimes purchase-return
+      if(Math.random()<0.25){
+        const r=pick(pItems); const rQty=Math.max(1,Math.floor(r.qty/2));
+        await addInvoice({ date, type:"purchase-return", supplier:SEED_SUPPLIER, items:[{sku:r.sku,name:r.name,qty:rQty,price:r.price}] });
+        await adjustStock(r.sku, -rQty);
+      }
+
+      // Sales (-stock)
+      const bills=rint(1,3);
+      for(let b=0;b<bills;b++){
+        const lines=rint(1,3);
+        const sItems=[];
+        for(let i=0;i<lines;i++){
+          const it=pick(CATALOG); const qty=rint(1,3);
+          sItems.push({ sku:it.sku, name:it.name, qty, price:it.mrp });
+        }
+        await addInvoice({ date, type:"sale", party:SEED_PARTY, items:sItems });
+        for(const li of sItems) await adjustStock(li.sku, -li.qty);
+
+        if(Math.random()<0.2){
+          const rr=pick(sItems); const rQty=1;
+          await addInvoice({ date, type:"sale-return", party:SEED_PARTY, items:[{sku:rr.sku,name:rr.name,qty:rQty,price:rr.price}] });
+          await adjustStock(rr.sku, +rQty);
+        }
+      }
+
+      // Vouchers
+      await db.vouchers.add({ date, type:"payment", amount:rint(500,2000), party:SEED_SUPPLIER, note:"Seed: Supplier payment" });
+      await db.vouchers.add({ date, type:"expense", amount:rint(100,400), party:"Petty Cash", note:"Seed: Pharmacy expense" });
+    }
+
+    const lowCount = await checkLowStockAndAlert(hasAlerts);
+
+    try{
+      localStorage.setItem("clinic.pulse", JSON.stringify({t:Date.now(),evt:"pharmacy:seeded"}));
+      localStorage.removeItem("clinic.pulse");
+    }catch{}
+
+    console.info("pharmacy-seed: seeded (low =", lowCount, ")");
+    return true;
+  }
+
+  // expose
+  window.seedPharmacyData  = seedPharmacyData;
   window.clearPharmacyData = clearPharmacyData;
 })();
-</script>

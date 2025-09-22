@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <!-- Banner -->
+  <!-- Banner (shared) -->
   <div class="hero-card">
     <img src="./public/assets/banner.png" alt="Dr. Charan Child Clinic">
   </div>
@@ -53,34 +53,49 @@
           <div class="small subtle" style="margin-bottom:6px">Quick</div>
           <div class="inline">
             <button class="btn" id="loadTodayBtn">Load Today</button>
+            <button class="btn" id="clearSlotsBtn">Clear Day’s Slots</button>
           </div>
         </div>
       </div>
 
-      <!-- SLOT GENERATOR -->
+      <!-- SLOT GENERATOR (Custom) -->
       <div style="height:14px"></div>
       <h3 class="section-title">Generate Custom Time Slots</h3>
       <div class="small subtle" style="margin:0 0 8px">Configure AM/PM windows & interval (mins). Generates fresh slots for selected date.</div>
 
       <div class="grid three">
         <div class="card">
-          <div class="small subtle">Morning window</div>
+          <div class="small subtle" style="margin-bottom:6px">Morning window</div>
           <div class="grid three">
-            <label>Start <input id="amStart" class="in" type="time" value="09:00"></label>
-            <label>End <input id="amEnd" class="in" type="time" value="12:00"></label>
-            <label>Interval <input id="amStep" class="in" type="number" min="5" step="5" value="30"></label>
+            <label>Start
+              <input id="amStart" class="in" type="time" value="09:00">
+            </label>
+            <label>End
+              <input id="amEnd" class="in" type="time" value="12:00">
+            </label>
+            <label>Interval (mins)
+              <input id="amStep" class="in" type="number" min="5" step="5" value="30">
+            </label>
           </div>
         </div>
+
         <div class="card">
-          <div class="small subtle">Afternoon window</div>
+          <div class="small subtle" style="margin-bottom:6px">Afternoon window</div>
           <div class="grid three">
-            <label>Start <input id="pmStart" class="in" type="time" value="14:00"></label>
-            <label>End <input id="pmEnd" class="in" type="time" value="17:00"></label>
-            <label>Interval <input id="pmStep" class="in" type="number" min="5" step="5" value="30"></label>
+            <label>Start
+              <input id="pmStart" class="in" type="time" value="14:00">
+            </label>
+            <label>End
+              <input id="pmEnd" class="in" type="time" value="17:00">
+            </label>
+            <label>Interval (mins)
+              <input id="pmStep" class="in" type="number" min="5" step="5" value="30">
+            </label>
           </div>
         </div>
+
         <div class="card">
-          <div class="small subtle">Actions</div>
+          <div class="small subtle" style="margin-bottom:6px">Actions</div>
           <div class="grid two">
             <button class="btn primary" id="genSlotsBtn">Generate Slots</button>
             <button class="btn" id="reloadSlotsBtn">Reload Slots</button>
@@ -104,29 +119,52 @@
               <option value="online">Online</option>
               <option value="whatsapp">WhatsApp</option>
             </select>
-            <button class="btn" id="waBtn" style="display:none">WhatsApp</button>
+            <button class="btn" id="waBtn" title="Open WhatsApp with confirmation" style="display:none">WhatsApp Message</button>
           </div>
+          <span class="hint">Use the WhatsApp button when Source = WhatsApp. It composes a message using phone + reason.</span>
         </label>
       </div>
 
       <div class="grid four" style="margin-top:8px">
-        <label>PID <input id="pid" class="in" placeholder="Pxxx"></label>
-        <label>Child Name *<input id="name" class="in" required></label>
-        <label>Phone <input id="phone" class="in"></label>
-        <label>Parent <input id="parent" class="in"></label>
-      </div>
-      <div class="grid four" style="margin-top:8px">
-        <label>DOB <input id="dob" class="in" type="date"></label>
-        <label>Age <input id="age" class="in" disabled></label>
-        <label>Height <input id="height" class="in" type="number"></label>
-        <label>Weight <input id="weight" class="in" type="number"></label>
-      </div>
-      <div class="grid two" style="margin-top:8px">
-        <label>Reason <input id="reason" class="in"></label>
-        <div style="align-self:end"><button class="btn primary" id="saveBtn">Save Booking</button></div>
+        <label>PID (optional; auto if blank)
+          <input id="pid" class="in" placeholder="Pxxx">
+        </label>
+        <label>Child Name *
+          <input id="name" class="in" placeholder="Child full name" required>
+        </label>
+        <label>Phone
+          <input id="phone" class="in" placeholder="10-digit">
+        </label>
+        <label>Parent
+          <input id="parent" class="in" placeholder="Parent / Guardian">
+        </label>
       </div>
 
-      <!-- TODAY BOOKINGS -->
+      <div class="grid four" style="margin-top:8px">
+        <label>DOB
+          <input id="dob" class="in" type="date">
+        </label>
+        <label>Age (auto)
+          <input id="age" class="in" placeholder="Years" disabled>
+        </label>
+        <label>Height (cm)
+          <input id="height" class="in" type="number" min="0" step="0.1" placeholder="e.g., 95">
+        </label>
+        <label>Weight (kg)
+          <input id="weight" class="in" type="number" min="0" step="0.1" placeholder="e.g., 14">
+        </label>
+      </div>
+
+      <div class="grid two" style="margin-top:8px">
+        <label>Reason
+          <input id="reason" class="in" placeholder="Reason for visit">
+        </label>
+        <div style="align-self:end" class="inline">
+          <button class="btn primary" id="saveBtn">Save Booking</button>
+        </div>
+      </div>
+
+      <!-- TODAY'S BOOKINGS -->
       <div style="height:18px"></div>
       <h3 class="section-title">Bookings for selected day</h3>
       <table class="tbl">
@@ -138,98 +176,313 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Supabase client -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script>
-    window.__SUPA = {
-      url: "https://mngkgitmcudogekzmimv.supabase.co",
-      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
+  <!-- Dexie & App -->
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+  <script type="module">
+    import db from './scripts/db.js';
+    import { emitClinicChange, onClinicChange } from './scripts/data-wire.js';
+
+    // ===== Helpers =====
+    const E = id => document.getElementById(id);
+    const todayISO = () => new Date().toISOString().slice(0,10);
+    const pad = n => String(n).padStart(2,'0');
+    const to12h = (hhmm) => {
+      const [h,m] = hhmm.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      return `${pad(h12)}:${pad(m)} ${ampm}`;
     };
-  </script>
-  <script src="./scripts/cloud.js"></script>
+    const minutesBetween = (start, end) => {
+      const [hs, ms] = start.split(':').map(Number);
+      const [he, me] = end.split(':').map(Number);
+      return (he*60+me) - (hs*60+ms);
+    };
+    const addMinutes = (hhmm, step) => {
+      const [h,m] = hhmm.split(':').map(Number);
+      const t = h*60 + m + step;
+      const nh = Math.floor(t/60), nm = t%60;
+      return `${pad(nh)}:${pad(nm)}`;
+    };
+    const calcAge = (dobStr) => {
+      if(!dobStr) return '';
+      const d = new Date(dobStr);
+      if(isNaN(d)) return '';
+      const now = new Date();
+      let y = now.getFullYear() - d.getFullYear();
+      const m = now.getMonth() - d.getMonth();
+      if (m < 0 || (m === 0 && now.getDate() < d.getDate())) y--;
+      return y;
+    };
+    const onlyDigits = (s='') => s.replace(/\D+/g,'');
+    const enc = (s='') => encodeURIComponent(s);
 
-  <script>
-    const E = id=>document.getElementById(id);
-    const todayISO = ()=>new Date().toISOString().slice(0,10);
-    const pad = n=>String(n).padStart(2,'0');
-    const to12h = t=>{const[h,m]=t.split(':').map(Number);const am=h>=12?'PM':'AM';return `${(h%12)||12}:${pad(m)} ${am}`;};
-    const onlyDigits=s=>(s||'').replace(/\D+/g,'');
-    const enc=s=>encodeURIComponent(s);
+    let clinicName = 'Dr. Charan Child Clinic';
+    (async ()=>{ try{ const meta = await db.clinic.get('meta'); if(meta?.name) clinicName = meta.name; }catch{} })();
 
-    E('todayStr').textContent=todayISO();E('dateInput').value=todayISO();
-    E('dob').onchange=()=>{if(E('dob').value){const d=new Date(E('dob').value);const n=new Date();let y=n.getFullYear()-d.getFullYear();if(n<n.setFullYear(d.getFullYear()+y))y--;E('age').value=y;}};
+    // ===== Init =====
+    E('todayStr').textContent = todayISO();
+    E('dateInput').value = todayISO();
 
-    function updateWA(){E('waBtn').style.display=E('source').value==='whatsapp'?'inline-flex':'none';}
-    E('source').onchange=updateWA;updateWA();
+    // Age auto
+    E('dob').addEventListener('change', ()=>{ E('age').value = calcAge(E('dob').value) || ''; });
 
-    function buildWindowSlots(date,start,end,step){const out=[];if(!start||!end||!step)return out;let t=start;while(t<end){out.push({date,time:to12h(t)});const[h,m]=t.split(':').map(Number);const mins=h*60+m+Number(step);t=`${pad(Math.floor(mins/60))}:${pad(mins%60)}`;}return out;}
+    // Toggle WhatsApp button
+    function updateWhatsAppButton(){
+      const show = E('source').value === 'whatsapp';
+      E('waBtn').style.display = show ? 'inline-flex' : 'none';
+    }
+    E('source').addEventListener('change', updateWhatsAppButton);
+    updateWhatsAppButton();
 
-    async function generateSlots(date){
-      const am=buildWindowSlots(date,E('amStart').value,E('amEnd').value,E('amStep').value);
-      const pm=buildWindowSlots(date,E('pmStart').value,E('pmEnd').value,E('pmStep').value);
-      let token=1;const slots=[...am,...pm].map((s,i)=>({...s,token:token+i,status:'free'}));
-      // wipe old slots
-      await cloud.del('slots',{date});
-      for(const s of slots){await cloud.insert('slots',s);}
-      await loadSlots(date);
+    // ===== Slots =====
+    function buildWindowSlots(date, start, end, step){
+      const slots = [];
+      if(!start || !end || step<=0) return slots;
+      if(minutesBetween(start,end) <= 0) return slots;
+      let t = start;
+      while (minutesBetween(t, end) > 0){
+        slots.push({ date, time: to12h(t) });
+        t = addMinutes(t, step);
+      }
+      return slots;
+    }
+
+    async function generateSlotsForDay(date){
+      await db.slots.where('date').equals(date).delete();
+      let token = 1;
+      const am = buildWindowSlots(date, E('amStart').value, E('amEnd').value, Number(E('amStep').value||0));
+      const pm = buildWindowSlots(date, E('pmStart').value, E('pmEnd').value, Number(E('pmStep').value||0));
+      const all = [...am, ...pm].map((s,idx)=>({
+        ...s,
+        key: `${s.date}-${s.time}`,
+        status: 'free',
+        token: token + idx
+      }));
+      if(all.length) await db.slots.bulkAdd(all);
+      E('slotCount').textContent = `${all.length} slots`;
+      emitClinicChange({evt:'slots:generated', payload:{date}});
     }
 
     async function loadSlots(date){
-      const taken=await cloud.selectWhere('appointments',{date});
-      const bookedTokens=new Set((taken.data||[]).map(r=>r.token));
-      const {data}=await cloud.selectWhere('slots',{date});
-      const free=(data||[]).filter(s=>!bookedTokens.has(s.token));
-      E('slotSelect').innerHTML=free.map(s=>`<option value="${s.token}">${s.time} (#${s.token})</option>`).join('');
-      E('slotCount').textContent=`${(data||[]).length} slots (${free.length} free)`;
+      const rows = await db.slots.where('date').equals(date).toArray();
+      const free = rows.filter(s=>s.status==='free');
+      E('slotSelect').innerHTML = free.map(s=>`<option value="${s.id}">${s.time} (#${s.token})</option>`).join('');
+      E('slotCount').textContent = `${rows.length} slots (${free.length} free)`;
     }
 
-    async function loadBookings(date){
-      const {data}=await cloud.selectWhere('appointments',{date});
-      data.sort((a,b)=>(a.token||0)-(b.token||0));
-      E('todayTable').innerHTML=(data||[]).map(a=>`<tr><td>${a.token}</td><td>${a.time}</td><td>${a.pid}</td><td>${a.name}</td><td>${a.phone}</td><td>${a.source}</td><td>${a.status}</td></tr>`).join('');
+    async function loadDayBookings(date){
+      const list = await db.appointments.where('date').equals(date).toArray();
+      list.sort((a,b)=> (a.token||0)-(b.token||0));
+      E('todayTable').innerHTML = list.map(a=>`
+        <tr>
+          <td>${a.token||''}</td>
+          <td>${a.time||''}</td>
+          <td>${a.pid||''}</td>
+          <td>${a.name||''}</td>
+          <td>${a.phone||''}</td>
+          <td>${a.source||''}</td>
+          <td>${a.status||''}</td>
+        </tr>
+      `).join('');
     }
 
-    function waLink({phone,name,date,time,token,reason,pid}){
-      const p=onlyDigits(phone);if(!p)return null;
-      const msg=`Hello ${name||'there'},%0AYour booking is noted.%0ADate: ${date}%0ATime: ${time} (Token #${token})%0APID: ${pid||''}%0AReason: ${reason||''}%0A— Thank you`;
-      return `https://wa.me/${p}?text=${msg}`;
+    // ===== Patient upsert =====
+    async function ensurePatient({pid, phone, name, parent, dob, height, weight}){
+      let finalPid = (pid||'').trim();
+      if(finalPid){
+        const ex = await db.patients.where('pid').equals(finalPid).first();
+        if(ex){
+          await db.patients.update(ex.id, {
+            phone: phone||ex.phone,
+            name: name||ex.name,
+            parent: parent||ex.parent,
+            dob: dob||ex.dob,
+            heightCm: height||ex.heightCm,
+            weightKg: weight||ex.weightKg,
+            updatedAt: Date.now()
+          });
+        }else{
+          await db.patients.add({
+            pid: finalPid, phone, name, parent, dob,
+            heightCm: height||null, weightKg: weight||null,
+            createdAt: Date.now(), updatedAt: Date.now()
+          });
+        }
+      }else{
+        finalPid = 'P' + Date.now().toString().slice(-6);
+        await db.patients.add({
+          pid: finalPid, phone, name, parent, dob,
+          heightCm: height||null, weightKg: weight||null,
+          createdAt: Date.now(), updatedAt: Date.now()
+        });
+      }
+      return finalPid;
     }
 
-    E('waBtn').onclick=()=>{
-      const t=E('slotSelect').selectedOptions[0]?.textContent||'';
-      const link=waLink({phone:E('phone').value,name:E('name').value,date:E('dateInput').value,time:t,token:E('slotSelect').value,reason:E('reason').value,pid:E('pid').value});
-      if(link) window.open(link,'_blank');
+    // ===== WhatsApp deep-link =====
+    function buildWhatsAppLink({phone, name, date, time, token, reason, pid}){
+      const cleanPhone = onlyDigits(phone||'');
+      if(!cleanPhone) return null;
+
+      const lines = [
+        `Hello ${name||'there'},`,
+        `Your booking at ${clinicName} is noted.`,
+        `Date: ${date||''}`,
+        `Time: ${time||''}${token?` (Token #${token})`:''}`,
+        pid ? `PID: ${pid}` : null,
+        reason ? `Reason: ${reason}` : null,
+        `— Thank you`
+      ].filter(Boolean);
+
+      const msg = lines.join('\n');
+      return `https://wa.me/${cleanPhone}?text=${enc(msg)}`;
+    }
+
+    E('waBtn').addEventListener('click', async ()=>{
+      // use current form values (before or after saving)
+      const sid = Number(E('slotSelect').value);
+      const slot = sid ? await db.slots.get(sid) : null;
+      const link = buildWhatsAppLink({
+        phone:  E('phone').value.trim(),
+        name:   E('name').value.trim() || 'Patient',
+        date:   E('dateInput').value || todayISO(),
+        time:   slot?.time || '',
+        token:  slot?.token || '',
+        reason: E('reason').value.trim(),
+        pid:    (E('pid').value||'').trim()
+      });
+      if(!link) { alert('Enter a valid phone number for WhatsApp.'); return; }
+      window.open(link, '_blank', 'noopener,noreferrer');
+    });
+
+    // ===== Booking save =====
+    async function saveBooking(){
+      const sid = Number(E('slotSelect').value);
+      const slot = sid ? await db.slots.get(sid) : null;
+      if(!slot){ alert('Select a free slot'); return; }
+
+      const name   = E('name').value.trim();
+      if(!name){ alert('Child name is required'); return; }
+
+      // gather optional fields
+      const pidIn  = E('pid').value.trim();
+      const phone  = E('phone').value.trim();
+      const parent = E('parent').value.trim();
+      const dob    = E('dob').value || null;
+      const height = E('height').value ? Number(E('height').value) : null;
+      const weight = E('weight').value ? Number(E('weight').value) : null;
+      const source = E('source').value;
+      const reason = E('reason').value.trim();
+
+      // upsert patient & get PID
+      const pid = await ensurePatient({pid:pidIn, phone, name, parent, dob, height, weight});
+
+      // appointment
+      await db.appointments.add({
+        date: slot.date,
+        time: slot.time,
+        pid, name, phone,
+        token: slot.token,
+        status: 'pending',
+        source,
+        reason,
+        createdAt: Date.now()
+      });
+
+      // mark slot booked
+      await db.slots.update(sid, { status:'booked', pid, name, phone });
+
+      // history entry
+      await db.patientHistory.add({
+        pid,
+        date: slot.date,
+        note: `Booking created for ${slot.time} (token #${slot.token}) • Source: ${source}${reason?` • ${reason}`:''}`,
+        author: 'Front Office',
+        meta: { type:'booking' }
+      });
+
+      // live updates
+      emitClinicChange({evt:'appointments:changed', payload:{date:slot.date}});
+      await loadSlots(slot.date);
+      await loadDayBookings(slot.date);
+
+      // If source is WhatsApp, offer to open message now
+      if(source === 'whatsapp'){
+        const link = buildWhatsAppLink({
+          phone, name, date:slot.date, time:slot.time, token:slot.token, reason, pid
+        });
+        if(link && confirm('Open WhatsApp to send confirmation?')) {
+          window.open(link, '_blank', 'noopener,noreferrer');
+        }
+      }
+
+      alert('Booking saved.');
+      E('reason').value='';
+    }
+
+    // ===== Wire UI =====
+    E('genSlotsBtn').onclick = async ()=>{
+      const d = E('dateInput').value || todayISO();
+      await generateSlotsForDay(d);
+      await loadSlots(d);
+      await loadDayBookings(d);
+    };
+    E('reloadSlotsBtn').onclick = async ()=>{
+      const d = E('dateInput').value || todayISO();
+      await loadSlots(d); await loadDayBookings(d);
+    };
+    E('clearSlotsBtn').onclick = async ()=>{
+      const d = E('dateInput').value || todayISO();
+      if(!confirm(`Clear ALL slots for ${d}?`)) return;
+      await db.slots.where('date').equals(d).delete();
+      await loadSlots(d); await loadDayBookings(d);
+      emitClinicChange({evt:'slots:generated', payload:{date:d}});
+    };
+    E('loadTodayBtn').onclick = async ()=>{
+      E('dateInput').value = todayISO();
+      await loadSlots(todayISO());
+      await loadDayBookings(todayISO());
     };
 
-    async function saveBooking(){
-      const date=E('dateInput').value||todayISO();
-      const token=Number(E('slotSelect').value);
-      if(!token){alert('Pick slot');return;}
-      const time=E('slotSelect').selectedOptions[0].textContent.split(' (#')[0];
-      const pid=E('pid').value||'P'+Date.now().toString().slice(-6);
-      const row={date,time,token,pid,name:E('name').value,phone:E('phone').value,parent:E('parent').value,dob:E('dob').value,height:E('height').value,weight:E('weight').value,source:E('source').value,reason:E('reason').value,status:'pending'};
-      await cloud.upsert('patients',{pid,name:row.name,phone:row.phone,parent:row.parent,dob:row.dob,heightcm:row.height,weightkg:row.weight},'pid');
-      await cloud.upsert('appointments',row,'date,token');
-      await cloud.insert('patienthistory',{pid,date,note:`Booking ${time} token#${token}`,author:'Front Office',meta:{}});
-      await loadSlots(date);await loadBookings(date);
-      if(row.source==='whatsapp'){const link=waLink(row);if(link&&confirm('Open WhatsApp?'))window.open(link,'_blank');}
-      alert('Saved booking.');
-    }
+    E('saveBtn').onclick = saveBooking;
+    E('dateInput').onchange = async ()=>{
+      const d = E('dateInput').value || todayISO();
+      await loadSlots(d); await loadDayBookings(d);
+    };
 
-    E('genSlotsBtn').onclick=()=>generateSlots(E('dateInput').value);
-    E('reloadSlotsBtn').onclick=()=>{loadSlots(E('dateInput').value);loadBookings(E('dateInput').value);};
-    E('loadTodayBtn').onclick=()=>{E('dateInput').value=todayISO();loadSlots(todayISO());loadBookings(todayISO());};
-    E('saveBtn').onclick=saveBooking;
-    E('dateInput').onchange=()=>{loadSlots(E('dateInput').value);loadBookings(E('dateInput').value);};
+    // initial load
+    (async ()=>{
+      const d = E('dateInput').value || todayISO();
+      await loadSlots(d);
+      await loadDayBookings(d);
+    })();
 
-    (async()=>{const d=todayISO();await loadSlots(d);await loadBookings(d);})();
+    onClinicChange((ev)=>{
+      if(!ev) return;
+      const d = E('dateInput').value || todayISO();
+      if(ev.evt && (ev.evt.startsWith('appointments') || ev.evt.startsWith('slots'))){
+        loadDayBookings(d);
+        loadSlots(d);
+      }
+    });
 
-    (function topbar(){
+    // Topbar
+    (function wireTopbar(){
       const html=document.documentElement;
-      const saved=localStorage.getItem('theme')||'dark';html.setAttribute('data-theme',saved);
-      E('themeBtn').onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n);};
-      E('logoutBtn').onclick=()=>{localStorage.removeItem('role');location.href='./login.html';};
-      E('clearCacheBtn').onclick=()=>{localStorage.clear();location.reload();};
+      const saved=localStorage.getItem('theme')||'dark';
+      html.setAttribute('data-theme',saved);
+      document.getElementById('themeBtn').onclick=()=>{
+        const n=html.getAttribute('data-theme')==='dark'?'light':'dark';
+        html.setAttribute('data-theme',n); localStorage.setItem('theme',n);
+      };
+      document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
+      document.getElementById('clearCacheBtn').onclick=async()=>{
+        if(!confirm('Clear caches + DB?')) return;
+        if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
+        await db.delete();
+        const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
+        location.reload();
+      };
     })();
   </script>
 </body>

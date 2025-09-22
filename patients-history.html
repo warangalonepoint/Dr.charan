@@ -35,7 +35,7 @@
   <div class="app">
     <div class="page-card">
       <h2 style="margin-top:0">Patients History</h2>
-      <p class="small">Front office & supervisor: read-only. Doctor can add notes.</p>
+      <p class="small">Front office: read-only. Doctor: add new notes.</p>
 
       <div class="grid">
         <!-- Search + select patient -->
@@ -72,56 +72,44 @@
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Supabase + cloud helper -->
-  <script src="https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-  <script>
-    /* Provide credentials for cloud.js */
-    window.__SUPA = {
-      url: "https://mngkgitmcudogekzmimv.supabase.co",
-      key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2tnaXRtY3Vkb2dla3ptaW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNjc2NzcsImV4cCI6MjA3Mzk0MzY3N30.f0CAvjUyMM1qhuYTZwVw_9khQFIhglCmuE7GcYfuv1I"
-    };
-  </script>
-  <script src="./scripts/cloud.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+  <script src="./scripts/data-wire.js"></script>
   <script type="module">
-    import { cloud } from './scripts/cloud.js';
+    import db from './scripts/db.js';
+    import { emitClinicChange } from './scripts/data-wire.js';
 
     // Role rules
-    const role = localStorage.getItem('role') || 'frontoffice';
-    const isDoctor = (role === 'doctor');
+    const role=localStorage.getItem('role')||'frontoffice';
+    const isDoctor = (role==='doctor');
+    if(!isDoctor){ document.getElementById('addBtn').style.display='none'; }
 
     // Theme + housekeeping
     const html=document.documentElement, saved=localStorage.getItem('theme')||'dark';
     html.setAttribute('data-theme',saved);
     document.getElementById('themeBtn').onclick=()=>{const n=html.getAttribute('data-theme')==='dark'?'light':'dark';html.setAttribute('data-theme',n);localStorage.setItem('theme',n);};
     document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
-    document.getElementById('clearCacheBtn').onclick=()=>{ if(!confirm('Clear caches?')) return; localStorage.clear(); location.reload(); };
+    document.getElementById('clearCacheBtn').onclick=async()=>{ if(!confirm('Clear caches + DB?')) return; if('caches' in window){ const n=await caches.keys(); for(const k of n) await caches.delete(k);} localStorage.clear(); location.reload(); };
 
     const E=id=>document.getElementById(id);
     const list=E('list'), q=E('q'), timeline=E('timeline'), pTitle=E('pTitle'), empty=E('empty');
     const editor=E('editor'), note=E('note'), addBtn=E('addBtn'), saveNote=E('saveNote'), cancelEdit=E('cancelEdit');
 
-    // Hide add button if not doctor
-    if(!isDoctor) addBtn.style.display='none';
+    let current=null; // selected patient
 
-    let current=null; // selected patient (object with at least pid/phone/name)
-
-    // ===== Patients search/list =====
     q.addEventListener('input', renderList);
 
     async function renderList(){
       const s=(q.value||'').toLowerCase();
-      const { data: rows = [] } = await cloud.selectAll('patients'); // full list
-      let filtered = rows;
+      let rows = await db.patients.toArray();
       if(s){
-        filtered = rows.filter(p=>{
+        rows = rows.filter(p=>{
           const hay=[p.phone,p.pid,p.name].map(x=>(x||'').toString().toLowerCase()).join('|');
           return hay.includes(s);
         });
       }
-      filtered.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
+      rows.sort((a,b)=> (a.name||'').localeCompare(b.name||''));
       list.innerHTML='';
-      filtered.forEach(p=>{
+      rows.forEach(p=>{
         const div=document.createElement('div');
         div.className='row';
         div.innerHTML=`<div><strong>${p.name||''}</strong> <span class="muted">(${p.phone||''})</span></div>
@@ -132,19 +120,15 @@
     }
 
     async function selectPatient(p){
-      current=p;
-      pTitle.textContent=`History — ${p.name||''} (${p.phone||''})`;
+      current=p; pTitle.textContent=`History — ${p.name||''} (${p.phone||''})`;
       await renderHistory();
       if(isDoctor){ editor.style.display='none'; note.value=''; }
     }
 
-    // ===== History timeline =====
     async function renderHistory(){
       if(!current){ timeline.innerHTML=''; empty.style.display=''; return; }
-      // key by PID if present else phone
-      const key = current.pid || current.phone || '';
-      const { data: rows = [] } = await cloud.selectWhere('patientHistory', { pid: key });
-      rows.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.id - a.id));
+      const rows = await db.patientHistory.where('pid').equals(current.pid||current.phone||'').toArray();
+      rows.sort((a,b)=> (b.date||'').localeCompare(a.date||'') || (b.id-a.id));
       timeline.innerHTML = rows.map(r=>`
         <div class="note">
           <div class="small muted mono">${r.date||''} • ${r.author||''}</div>
@@ -154,39 +138,22 @@
       empty.style.display = rows.length?'none':'';
     }
 
-    // ===== Add note (doctor only) =====
+    // Add note (doctor only)
     if(isDoctor){
       addBtn.onclick=()=>{ if(!current){ alert('Select a patient first.'); return; } editor.style.display='block'; note.focus(); };
       cancelEdit.onclick=()=>{ editor.style.display='none'; note.value=''; };
       saveNote.onclick=async ()=>{
         const text=note.value.trim(); if(!text){ alert('Empty note.'); return; }
-        if(!current){ alert('Select a patient first.'); return; }
-        const today = new Date().toISOString().slice(0,10);
-        const pidKey = current.pid || current.phone || (current.name||'');
-        await cloud.insert('patientHistory', {
-          pid: pidKey,
-          date: today,
-          note: text,
-          author: 'Doctor',
-          meta: null,
-          createdAt: new Date().toISOString()
-        });
+        const today=new Date().toISOString().slice(0,10);
+        const pid = current.pid || current.phone || (current.name||'');
+        await db.patientHistory.add({ pid, date:today, note:text, author:'doctor', meta:null });
         editor.style.display='none'; note.value='';
+        emitClinicChange('history:changed',{pid});
         await renderHistory();
       };
     }
 
-    // Initial render + realtime listeners
-    await renderList();
-
-    // Realtime: when patients or history change, refresh relevant views
-    cloud.listen('patients', ()=>renderList());
-    cloud.listen('patientHistory', (payload)=>{
-      if(!current) return;
-      // If the change is for the selected PID, refresh timeline
-      const row = payload?.new || payload?.old;
-      if(row && (row.pid === (current.pid || current.phone))) renderHistory();
-    });
+    renderList();
   </script>
 </body>
 </html>

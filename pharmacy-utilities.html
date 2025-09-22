@@ -23,7 +23,7 @@
   <div class="app">
     <div class="page-card">
       <h2>Pharmacy Utilities</h2>
-      <p class="small">Manage stock adjustments, expiry/write-off, and testing seed/clear for pharmacy only.</p>
+      <p class="small">Manage stock adjustments, expiry, and seeding for testing.</p>
 
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
         <button class="btn" id="seedPharmBtn">Seed Pharmacy Data</button>
@@ -38,31 +38,25 @@
         <button class="btn primary" id="adjBtn">Adjust</button>
       </div>
 
-      <!-- Expiry / Write-off -->
+      <!-- Expiry Write-off -->
       <h3>Mark Expiry / Write-off</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
         <input class="in" id="expSku" placeholder="SKU">
         <input class="in" id="expQty" type="number" placeholder="Quantity">
-        <input class="in" id="expReason" placeholder="Reason (e.g., expired, damaged)">
         <button class="btn primary" id="expBtn">Write-off</button>
       </div>
-
-      <div class="small" id="msg" style="opacity:.85"></div>
     </div>
   </div>
 
   <footer class="small">© 2025 Onestop Ai services. All rights Reserved</footer>
 
-  <!-- Dexie + global seeder (attaches window.seedPharmacyData / window.clearPharmacyData) -->
+  <!-- Dexie + db + pharmacy seed -->
   <script src="https://cdn.jsdelivr.net/npm/dexie@4/dist/dexie.min.js"></script>
+  <script src="./scripts/db.js"></script>
   <script src="./scripts/pharmacy-seed.js"></script>
 
-  <!-- App wiring -->
-  <script type="module">
-    import db from './scripts/db.js';
-    import { emitClinicChange } from './scripts/data-wire.js';
-
-    // ---- Topbar / theme / housekeeping ----
+  <script>
+    // Theme toggle
     const html=document.documentElement;
     html.setAttribute('data-theme',localStorage.getItem('theme')||'dark');
     document.getElementById('themeBtn').onclick=()=>{
@@ -71,103 +65,47 @@
     };
     document.getElementById('logoutBtn').onclick=()=>{ localStorage.removeItem('role'); location.href='./login.html'; };
     document.getElementById('clearCacheBtn').onclick=async()=>{
-      if(!confirm('Clear caches + local DB?')) return;
+      if(!confirm('Clear caches+DB?')) return;
       if('caches' in window){ const names=await caches.keys(); for(const n of names) await caches.delete(n); }
-      await db.delete();
-      const keep=localStorage.getItem('theme'); localStorage.clear(); if(keep) localStorage.setItem('theme',keep);
-      location.reload();
+      await db.delete(); const keep=localStorage.getItem('theme'); localStorage.clear();
+      if(keep) localStorage.setItem('theme',keep); location.reload();
     };
 
-    const E = id => document.getElementById(id);
-    const msg = E('msg');
-    const todayISO = () => new Date().toISOString().slice(0,10);
-
-    function say(text){ msg.textContent=text; setTimeout(()=>{ msg.textContent=''; }, 1800); }
-
-    // ---- Seed / Clear (from pharmacy-seed.js globals) ----
-    E('seedPharmBtn').onclick = async ()=>{
-      try{
-        if(typeof window.seedPharmacyData!=='function'){ alert('seedPharmacyData() not found'); return; }
-        E('seedPharmBtn').disabled=true; E('seedPharmBtn').textContent='Seeding…';
-        await window.seedPharmacyData();
-        emitClinicChange('import:done',{scope:'pharmacy'});
-        alert('Pharmacy data seeded.');
-      }catch(err){
-        console.error(err); alert('Seeding failed: '+(err?.message||err));
-      }finally{
-        E('seedPharmBtn').disabled=false; E('seedPharmBtn').textContent='Seed Pharmacy Data';
-      }
+    // Seed/Clear buttons
+    document.getElementById('seedPharmBtn').onclick=async()=>{ 
+      await window.seedPharmacyData(); alert('Pharmacy data seeded.');
+    };
+    document.getElementById('clearPharmBtn').onclick=async()=>{ 
+      await window.clearPharmacyData(); alert('Pharmacy data cleared.');
     };
 
-    E('clearPharmBtn').onclick = async ()=>{
-      try{
-        if(typeof window.clearPharmacyData!=='function'){ alert('clearPharmacyData() not found'); return; }
-        if(!confirm('Clear pharmacy items, invoices, invoiceItems & related?')) return;
-        E('clearPharmBtn').disabled=true; E('clearPharmBtn').textContent='Clearing…';
-        await window.clearPharmacyData();
-        emitClinicChange('pharmacy:cleared',{});
-        alert('Pharmacy data cleared.');
-      }catch(err){
-        console.error(err); alert('Clear failed: '+(err?.message||err));
-      }finally{
-        E('clearPharmBtn').disabled=false; E('clearPharmBtn').textContent='Clear Pharmacy Data';
-      }
+    // Stock adjustment
+    document.getElementById('adjBtn').onclick=async()=>{
+      const sku=document.getElementById('adjSku').value.trim();
+      const qty=parseInt(document.getElementById('adjQty').value,10)||0;
+      if(!sku||!qty) return alert('Enter SKU and quantity');
+      const item=await db.pharmacyItems.where('sku').equals(sku).first();
+      if(!item) return alert('Item not found: '+sku);
+      await db.pharmacyItems.update(item.id,{stock:(item.stock||0)+qty});
+      alert(`Adjusted ${sku} by ${qty}. New stock=${(item.stock||0)+qty}`);
     };
 
-    // ---- Stock adjustment (+/-) ----
-    E('adjBtn').onclick = async ()=>{
-      const sku=(E('adjSku').value||'').trim();
-      const qty = Number(E('adjQty').value||0);
-      if(!sku || !qty){ alert('Enter SKU and non-zero quantity'); return; }
-
-      const it = await db.pharmacyItems.where('sku').equals(sku).first();
-      if(!it){ alert('Item not found: '+sku); return; }
-
-      const newStock = Number(it.stock||0) + qty;
-      await db.pharmacyItems.update(it.id, { stock:newStock });
-
-      // Optional accounting journal in vouchers (zero-amount note)
-      await db.vouchers.add({
-        date: todayISO(),
-        type: 'journal',
-        amount: 0,
-        party: 'stock-adjust',
-        note: `SKU:${sku} • NAME:${it.name||''} • DELTA:${qty} • NEW:${newStock}`
+    // Expiry / write-off
+    document.getElementById('expBtn').onclick=async()=>{
+      const sku=document.getElementById('expSku').value.trim();
+      const qty=parseInt(document.getElementById('expQty').value,10)||0;
+      if(!sku||!qty) return alert('Enter SKU and quantity');
+      const item=await db.pharmacyItems.where('sku').equals(sku).first();
+      if(!item) return alert('Item not found: '+sku);
+      const newStock=Math.max(0,(item.stock||0)-qty);
+      await db.pharmacyItems.update(item.id,{stock:newStock});
+      await db.invoices.add({
+        date:new Date().toISOString().slice(0,10),
+        type:'expiry',
+        total:0, pid:null, party:'Expiry Write-off', supplier:null,
+        bill:'EXP-'+Date.now()
       });
-
-      emitClinicChange('pharmacy:inventory',{sku,delta:qty});
-      say(`Adjusted ${sku} by ${qty}. New stock=${newStock}`);
-      E('adjQty').value='';
-    };
-
-    // ---- Expiry / write-off (↓ stock, journal entry) ----
-    E('expBtn').onclick = async ()=>{
-      const sku=(E('expSku').value||'').trim();
-      const qty = Math.max(1, Number(E('expQty').value||0));
-      const reason=(E('expReason').value||'').trim() || 'expired';
-      if(!sku || !qty){ alert('Enter SKU and quantity'); return; }
-
-      const it = await db.pharmacyItems.where('sku').equals(sku).first();
-      if(!it){ alert('Item not found: '+sku); return; }
-
-      const cur = Number(it.stock||0);
-      if(qty>cur){ alert('Qty exceeds current stock'); return; }
-
-      const newStock = cur - qty;
-      await db.pharmacyItems.update(it.id, { stock:newStock });
-
-      // Log as zero-amount voucher (party='expiry') — aligns with pharmacy-expiry.html
-      await db.vouchers.add({
-        date: todayISO(),
-        type: 'journal',
-        amount: 0,
-        party: 'expiry',
-        note: `SKU:${sku} • NAME:${it.name||''} • QTY:${qty} • REASON:${reason}`
-      });
-
-      emitClinicChange('pharmacy:inventory',{sku,qty});
-      say(`Write-off: ${qty} of ${sku}. Stock now=${newStock}`);
-      ['expSku','expQty','expReason'].forEach(id=>E(id).value='');
+      alert(`Expired ${qty} units of ${sku}. Stock now=${newStock}`);
     };
   </script>
 </body>
